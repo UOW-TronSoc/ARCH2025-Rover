@@ -1,0 +1,12 @@
+{
+    "C_Cpp.errorSquiggles": "enabledIfIncludesResolve",
+    "cmake.ignoreCMakeListsMissing": true,
+    "C_Cpp.default.cppStandard": "c++20",
+    "files.associations": {
+        "chrono": "cpp",
+        "ostream": "cpp",
+        "cstdlib": "cpp",
+        "cmath": "cpp",
+        "iostream": "cpp"
+    }
+}
