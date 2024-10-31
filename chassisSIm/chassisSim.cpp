@@ -27,7 +27,7 @@
 using namespace std;
 namespace plt = matplotlibcpp;
 
-#define FlatMap true
+#define FlatMap false
 #define PlotMotors false
 #define RSStep 0.01
 
@@ -39,6 +39,8 @@ atomic<float> inputAxisW(0.0f);
 atomic<float> inputAxisZ(0.0f);
 atomic<bool> buttonY(false);
 atomic<bool> wasButtonYPressed(false);
+atomic<bool> buttonB(false);
+atomic<bool> wasButtonBPressed(false);
 
 // Interrupt handler
 void signalHandler(int signum) {
@@ -150,23 +152,18 @@ void readController() {
                     // buttonX = ev.value;
                     break;
                 case 305: // Button B
-                    // static bool wasButtonBPressed = false; // Track the previous state of Button Y
-                    // // cout<<"ButtonB Pressed: " <<endl;
-                    // if (ev.value == 1 && !wasButtonBPressed) {
-                    //     // Button B is pressed and was not pressed before (i.e., transition from unpressed to pressed)
-                    //     cout<<"ButtonB Pressed: " <<endl;
-                        
-                    //     buttonB = true;
-                        
-                    //     hexapod.operationDuration = 0;
-                        
-                    //     wasButtonBPressed = true; // Update the state to pressed
-                    // } else {
-                    //     // Button B is released, reset the state
-                    //     buttonB = false;
-                    //     wasButtonBPressed = false;
-                    // }
-                    // break;
+                    static bool wasButtonBPressed = false; // Track the previous state of Button Y
+					
+					if (ev.value == 1 && !wasButtonBPressed) {
+						// Button Y is pressed and was not pressed before (rising edge)
+						buttonB = true;  // Signal the button press
+						wasButtonBPressed = true; // Update the state to pressed
+					} else if (ev.value == 0) {
+						// Button Y is released, reset the press state
+						wasButtonBPressed = false;
+						buttonB = false;  // Clear buttonB to prevent continuous activation
+					}
+					break;
                 case 308: // Button Y
 					static bool wasButtonYPressed = false; // Track the previous state of Button Y
 					
@@ -209,18 +206,15 @@ int main(int argc, char* argv[]) {
 	raisim::World world;
 	world.setTimeStep(RSStep);
 
-	
-		/// create objects
-	raisim::TerrainProperties terrainProperties;
 
-	
-	terrainProperties.frequency = 0.2;
+	raisim::TerrainProperties terrainProperties;
 	// Setup Ground
 	if (!FlatMap) {
-		terrainProperties.zScale = 2.0;
+		terrainProperties.zScale = 1.5;
 	} else {
 		terrainProperties.zScale = 0.0;
 	}
+	terrainProperties.frequency = 0.2;
 	terrainProperties.xSize = 70.0;
 	terrainProperties.ySize = 70.0;
 	terrainProperties.xSamples = 70;
@@ -229,15 +223,24 @@ int main(int argc, char* argv[]) {
 	terrainProperties.fractalLacunarity = 2.0;
 	terrainProperties.fractalGain = 0.25;
 
-	auto hm = world.addHeightMap(20.0, 20.0, terrainProperties, "sand");
+	auto hm = world.addHeightMap(0.0, 0.0, terrainProperties, "sand");
 	hm->setAppearance("soil2");
+
+	raisim::Mat<3, 3> inertia;
+	inertia.setIdentity();
+	raisim::Vec<3> com = {0, 0, 0};
+
+	auto lander = world.addMesh(binaryPath.getDirectory() + "/rsc/environment/meshes/lander(1).obj", 1.0, inertia, com);
+	lander->setPosition(raisim::Vec<3>{0,0,1.5});
+	lander->setBodyType(raisim::BodyType::STATIC);
+	
 
 	// Setup rover Parameters
 	auto rover = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/huskyDemo/urdf/husky.urdf");
 	rover->setName("smb");
 	Eigen::VectorXd gc(rover->getGeneralizedCoordinateDim()), gv(rover->getDOF()), ga(rover->getDOF()), gf(rover->getDOF()), damping(rover->getDOF());
 	gc.setZero(); gv.setZero();
-	gc.segment<7>(0) << 0, 0, 2, 1, 0, 0, 0;
+	gc.segment<7>(0) << 0, 0, 1.6, 0.7071068, 0, 0, -0.7071068;
 	rover->setGeneralizedCoordinate(gc);
 	rover->setGeneralizedVelocity(gv);
 	damping.setConstant(0);
@@ -269,7 +272,7 @@ int main(int argc, char* argv[]) {
     while (!server.isConnected())
         ;
     cout << "Server Connected" << endl;
-	server.focusOn(rover);
+	// server.focusOn(rover);
 
 	// Motor Parameter
 	int motorV = 24;
@@ -369,10 +372,11 @@ int main(int argc, char* argv[]) {
 		}
 
 		// If fallen off edge send back to centre
-		if(fabs(gc[0])>35. || fabs(gc[1])>35.) {
-		  gc.segment<7>(0) << 0, 0, 2, 1, 0, 0, 0;
-		  gv.setZero();
-		  rover->setState(gc, gv);
+		if(fabs(gc[0])>35. || fabs(gc[1])>35. || buttonB) {
+			gc.segment<7>(0) << 0, 0, 1.6, 0.7071068, 0, 0, -0.7071068;
+			gv.setZero();
+			rover->setState(gc, gv);
+			buttonB = false;
 		}
 
 		if (time % 5 == 0) { // Display only every 'displayInterval' iterations
