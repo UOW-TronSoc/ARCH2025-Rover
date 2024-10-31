@@ -3,6 +3,7 @@
 
 #include "raisim/RaisimServer.hpp"
 #include "raisim/World.hpp"
+
 #include "matplotlibcpp.h"
 #include <stdio.h>
 #include <fstream>
@@ -21,12 +22,14 @@
 #include "../modules/localController/getController.h"
 #include "../modules/utilities/utils.h"
 
+#include <opencv2/opencv.hpp>
+
 using namespace std;
 namespace plt = matplotlibcpp;
 
-#define HeightMap true
-#define plotMotors false
-#define rsStep 0.001
+#define FlatMap true
+#define PlotMotors false
+#define RSStep 0.01
 
 // Variables to share between threads
 atomic<bool> running(true);
@@ -200,42 +203,53 @@ void readController() {
 
 int main(int argc, char* argv[]) {
 	auto binaryPath = raisim::Path::setFromArgv(argv[0]);
+	raisim::RaiSimMsg::setFatalCallback([](){throw;});
 
 	// Setup World
 	raisim::World world;
-	world.setTimeStep(rsStep);
+	world.setTimeStep(RSStep);
 
-	// Setup Ground
-	if (HeightMap) {
+	
 		/// create objects
-		raisim::TerrainProperties terrainProperties;
-		terrainProperties.frequency = 0.2;
+	raisim::TerrainProperties terrainProperties;
+
+	
+	terrainProperties.frequency = 0.2;
+	// Setup Ground
+	if (!FlatMap) {
 		terrainProperties.zScale = 2.0;
-		terrainProperties.xSize = 70.0;
-		terrainProperties.ySize = 70.0;
-		terrainProperties.xSamples = 70;
-		terrainProperties.ySamples = 70;
-		terrainProperties.fractalOctaves = 3;
-		terrainProperties.fractalLacunarity = 2.0;
-		terrainProperties.fractalGain = 0.25;
-
-		auto hm = world.addHeightMap(0.0, 0.0, terrainProperties);
-		hm->setAppearance("soil2");
 	} else {
-		auto ground = world.addGround(0);
+		terrainProperties.zScale = 0.0;
 	}
+	terrainProperties.xSize = 70.0;
+	terrainProperties.ySize = 70.0;
+	terrainProperties.xSamples = 70;
+	terrainProperties.ySamples = 70;
+	terrainProperties.fractalOctaves = 3;
+	terrainProperties.fractalLacunarity = 2.0;
+	terrainProperties.fractalGain = 0.25;
 
-	// Setup Robot Parameters
-	auto robot = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/huskyDemo/husky.urdf");
-	robot->setName("smb");
-	Eigen::VectorXd gc(robot->getGeneralizedCoordinateDim()), gv(robot->getDOF()), ga(robot->getDOF()), gf(robot->getDOF()), damping(robot->getDOF());
+	auto hm = world.addHeightMap(20.0, 20.0, terrainProperties, "sand");
+	hm->setAppearance("soil2");
+
+	// Setup rover Parameters
+	auto rover = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/huskyDemo/urdf/husky.urdf");
+	rover->setName("smb");
+	Eigen::VectorXd gc(rover->getGeneralizedCoordinateDim()), gv(rover->getDOF()), ga(rover->getDOF()), gf(rover->getDOF()), damping(rover->getDOF());
 	gc.setZero(); gv.setZero();
 	gc.segment<7>(0) << 0, 0, 2, 1, 0, 0, 0;
-	robot->setGeneralizedCoordinate(gc);
-	robot->setGeneralizedVelocity(gv);
+	rover->setGeneralizedCoordinate(gc);
+	rover->setGeneralizedVelocity(gv);
 	damping.setConstant(0);
 	damping.tail(4).setConstant(1.);
-	robot->setJointDamping(damping);
+	rover->setJointDamping(damping);
+
+	// Virtual Camera
+	auto frontCam = rover->getSensorSet("depth_camera_front_camera_parent")->getSensor<raisim::RGBCamera>("color");
+  	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
+
+	auto rearCam = rover->getSensorSet("depth_camera_rear_camera_parent")->getSensor<raisim::RGBCamera>("color");
+  	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
 
 	/// launch raisim server
 	raisim::RaisimServer server(&world);
@@ -255,7 +269,7 @@ int main(int argc, char* argv[]) {
     while (!server.isConnected())
         ;
     cout << "Server Connected" << endl;
-	server.focusOn(robot);
+	server.focusOn(rover);
 
 	// Motor Parameter
 	int motorV = 24;
@@ -280,11 +294,11 @@ int main(int argc, char* argv[]) {
 	int dur = 20;
 
 	// Create vector variables for plotting
-	vector<double> t(dur / rsStep);
-	vector<vector<double>> frontLeftAngDesired(4, vector<double>(dur / rsStep));
-	vector<vector<double>> frontLeftAngActual(4, vector<double>(dur / rsStep));
-	vector<vector<double>> frontLeftTorqueActual(4, vector<double>(dur / rsStep));
-	vector<vector<double>> frontLeftTorqueDesired(4, vector<double>(dur / rsStep));
+	vector<double> t(dur / RSStep);
+	vector<vector<double>> frontLeftAngDesired(4, vector<double>(dur / RSStep));
+	vector<vector<double>> frontLeftAngActual(4, vector<double>(dur / RSStep));
+	vector<vector<double>> frontLeftTorqueActual(4, vector<double>(dur / RSStep));
+	vector<vector<double>> frontLeftTorqueDesired(4, vector<double>(dur / RSStep));
 
 	int time = 0;
 	// Record start time
@@ -296,11 +310,11 @@ int main(int argc, char* argv[]) {
 		RS_TIMED_LOOP(int(world.getTimeStep()*1e6))
 		server.integrateWorldThreadSafe();
 
-		// Get Robot State
-		gc = robot->getGeneralizedCoordinate().e();
-		gv = robot->getGeneralizedVelocity().e();
-		ga = robot->getGeneralizedAcceleration().e();
-		gf = robot->getGeneralizedForce().e();
+		// Get rover State
+		gc = rover->getGeneralizedCoordinate().e();
+		gv = rover->getGeneralizedVelocity().e();
+		ga = rover->getGeneralizedAcceleration().e();
+		gf = rover->getGeneralizedForce().e();
 
 		// Set Motor Speeds
 		if (active) {
@@ -320,7 +334,7 @@ int main(int argc, char* argv[]) {
 
 			// PID Terms
 			Tp = kp * (wheelVel[wheel] - gv[6 + wheel]);
-			Td = kd * (wheelVel[wheel] - gv[6 + wheel]) / rsStep;
+			Td = kd * (wheelVel[wheel] - gv[6 + wheel]) / RSStep;
 
 			// Base Torques
 			controlForce[wheel] = wheelVel[wheel] + Tp + Td;
@@ -330,7 +344,7 @@ int main(int argc, char* argv[]) {
 			controlForce[wheel] = max(min(controlForce[wheel], maxwheelTorque), -maxwheelTorque);
 
 			// For Plots
-			if (plotMotors && time < dur/rsStep) {
+			if (PlotMotors && time < dur/RSStep) {
 				t[time] = time;
 				frontLeftAngDesired[wheel][time] = wheelVel[wheel];
 				frontLeftAngActual[wheel][time] = gv[6 + wheel];
@@ -339,7 +353,7 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		robot->setGeneralizedForce({0, 0, 0, 0, 0, 0, controlForce[0], controlForce[1], controlForce[2], controlForce[3]});
+		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, controlForce[0], controlForce[1], controlForce[2], controlForce[3]});
 
 		if (buttonY) {  // Only runs on a true "buttonY" from rising edge detection
 			if (!active) {
@@ -358,7 +372,33 @@ int main(int argc, char* argv[]) {
 		if(fabs(gc[0])>35. || fabs(gc[1])>35.) {
 		  gc.segment<7>(0) << 0, 0, 2, 1, 0, 0, 0;
 		  gv.setZero();
-		  robot->setState(gc, gv);
+		  rover->setState(gc, gv);
+		}
+
+		if (time % 5 == 0) { // Display only every 'displayInterval' iterations
+
+			// cout << "Camera Display: " << k <<endl;
+
+			auto frontCamData = frontCam->getImageBuffer();
+			auto rearCamData = rearCam->getImageBuffer();
+
+			// Set the dimensions of the image (adjust as necessary for your camera settings)
+			int width = 640;   // Replace with your actual width
+			int height = 480;  // Replace with your actual height
+
+			// Process and display the first camera image
+			cv::Mat imageBGRAFront(height, width, CV_8UC4, frontCamData.data());
+			cv::Mat imageBGRFront;
+			cv::cvtColor(imageBGRAFront, imageBGRFront, cv::COLOR_BGRA2BGR);
+			cv::imshow("Front Camera Image", imageBGRFront);
+
+			// Process and display the second camera image
+			cv::Mat imageBGRARear(height, width, CV_8UC4, rearCamData.data());
+			cv::Mat imageBGRRear;
+			cv::cvtColor(imageBGRARear, imageBGRRear, cv::COLOR_BGRA2BGR);
+			cv::imshow("Rear Camera Image", imageBGRRear);
+
+			cv::waitKey(1);  // Minimal delay to refresh the display
 		}
 
 		time++;
@@ -371,7 +411,7 @@ int main(int argc, char* argv[]) {
     chrono::duration<double> elapsed = endTime - startTime;
     cout << "\nLoop duration: " << elapsed.count() << " seconds." << endl;
 
-	if (plotMotors) {
+	if (PlotMotors) {
 		plt::figure_size(1366, 768);
 		plt::plot(t, frontLeftAngDesired[0], "r-");
 		plt::plot(t, frontLeftAngActual[0], "b-");

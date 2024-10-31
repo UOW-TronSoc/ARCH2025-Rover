@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 14)
 find_package(Eigen3 REQUIRED)
 find_package(raisim CONFIG REQUIRED)
 find_package(PythonLibs 3.10 REQUIRED)  # Change Python version as needed
-
+find_package(OpenCV REQUIRED)
 
 # Include directories
 include_directories(
@@ -15,6 +15,7 @@ include_directories(
 	${PYTHON_INCLUDE_DIRS}
 	"/home/hunter/Documents/github/importedRepos/matplotlib-cpp"
 	"/home/hunter/raisim_ws/repos/matplotlib-cpp"
+	${OpenCV_INCLUDE_DIRS}
 )
 
 # Add executables
@@ -28,6 +29,7 @@ add_executable(chassisSim
 target_link_libraries(chassisSim PUBLIC 
 	raisim::raisim
 	${PYTHON_LIBRARIES}
+	${OpenCV_LIBS}
 )
 
 if(NOT WIN32)

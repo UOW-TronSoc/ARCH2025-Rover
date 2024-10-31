@@ -7,7 +7,8 @@
                 "/home/hunter/Documents/github/importedRepos/**",
                 "/usr/include/python3.10/**",
                 "/usr/include/eigen3/**",
-                "/home/hunter/Documents/github/importedRepos/matplotlib-cpp"
+                "/home/hunter/Documents/github/importedRepos/matplotlib-cpp",
+                "/usr/include/opencv4"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",
