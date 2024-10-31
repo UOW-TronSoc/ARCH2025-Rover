@@ -25,6 +25,7 @@ using namespace std;
 namespace plt = matplotlibcpp;
 
 #define HeightMap true
+#define plotMotors false
 #define rsStep 0.001
 
 // Variables to share between threads
@@ -133,7 +134,7 @@ void readController() {
                 case 318: // Right Joystick Click
                     // cout << "Right Joystick Click: " << ev.value << " (" 
                     //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-                    // running = false;
+                    running = false;
                     break;
                 case 304: // Button A
                     // cout << "Button A: " << ev.value << " (" 
@@ -197,13 +198,14 @@ void readController() {
     close(fd);
 }
 
-
 int main(int argc, char* argv[]) {
 	auto binaryPath = raisim::Path::setFromArgv(argv[0]);
 
+	// Setup World
 	raisim::World world;
 	world.setTimeStep(rsStep);
 
+	// Setup Ground
 	if (HeightMap) {
 		/// create objects
 		raisim::TerrainProperties terrainProperties;
@@ -223,6 +225,7 @@ int main(int argc, char* argv[]) {
 		auto ground = world.addGround(0);
 	}
 
+	// Setup Robot Parameters
 	auto robot = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/huskyDemo/husky.urdf");
 	robot->setName("smb");
 	Eigen::VectorXd gc(robot->getGeneralizedCoordinateDim()), gv(robot->getDOF()), ga(robot->getDOF()), gf(robot->getDOF()), damping(robot->getDOF());
@@ -252,9 +255,9 @@ int main(int argc, char* argv[]) {
     while (!server.isConnected())
         ;
     cout << "Server Connected" << endl;
-
 	server.focusOn(robot);
 
+	// Motor Parameter
 	int motorV = 24;
 	int motorKv = 100;
 	double motorTorque = 1;
@@ -265,25 +268,27 @@ int main(int argc, char* argv[]) {
 	double maxwheelTorque = motorTorque * reduction;
 	double maxWheelTorqueDelta = 5;
 
+	// Control Parameters
 	double wheelVel[4] = {0.0, 0.0, 0.0, 0.0};
 	double controlForce[4] = {0.0, 0.0, 0.0, 0.0};
-
 	double kp = 10.0;
 	double kd = 0.00;
-
 	double Tp;
 	double Td;
 
-	int dur = 5;
+	// Plotting duration
+	int dur = 20;
 
 	// Create vector variables for plotting
-    // vector<double> t(dur / rsStep);
-    // vector<vector<double>> frontLeftAngDesired(4, vector<double>(dur / rsStep));
-    // vector<vector<double>> frontLeftAngActual(4, vector<double>(dur / rsStep));
-	// vector<vector<double>> frontLeftTorqueActual(4, vector<double>(dur / rsStep));
-	// vector<vector<double>> frontLeftTorqueDesired(4, vector<double>(dur / rsStep));
+	vector<double> t(dur / rsStep);
+	vector<vector<double>> frontLeftAngDesired(4, vector<double>(dur / rsStep));
+	vector<vector<double>> frontLeftAngActual(4, vector<double>(dur / rsStep));
+	vector<vector<double>> frontLeftTorqueActual(4, vector<double>(dur / rsStep));
+	vector<vector<double>> frontLeftTorqueDesired(4, vector<double>(dur / rsStep));
 
 	int time = 0;
+	// Record start time
+    auto startTime = chrono::high_resolution_clock::now();
 
 	// Main Loop
 	while(running) {
@@ -297,6 +302,7 @@ int main(int argc, char* argv[]) {
 		ga = robot->getGeneralizedAcceleration().e();
 		gf = robot->getGeneralizedForce().e();
 
+		// Set Motor Speeds
 		if (active) {
 			wheelVel[0] = (inputAxisZ / 2047) * maxWheelRads;
 			wheelVel[1] = (inputAxisY / 2047) * maxWheelRads;
@@ -309,24 +315,28 @@ int main(int argc, char* argv[]) {
 			wheelVel[3] = 0.0;
 		}
 
-			// PID Controller wit velocity input and torque output
+		// PID Controller with velocity input and torque output
 		for (size_t wheel = 0; wheel < 4; wheel++) {
 
+			// PID Terms
 			Tp = kp * (wheelVel[wheel] - gv[6 + wheel]);
 			Td = kd * (wheelVel[wheel] - gv[6 + wheel]) / rsStep;
 
+			// Base Torques
 			controlForce[wheel] = wheelVel[wheel] + Tp + Td;
-
+			// Smoothed Torques
 			controlForce[wheel] = max(min(controlForce[wheel], gf[6 + wheel] + maxWheelTorqueDelta), gf[6 + wheel] - maxWheelTorqueDelta);
-
+			// Capped Torques
 			controlForce[wheel] = max(min(controlForce[wheel], maxwheelTorque), -maxwheelTorque);
 
 			// For Plots
-			// t[time] = time;
-			// frontLeftAngDesired[wheel][time] = wheelVel[wheel];
-			// frontLeftAngActual[wheel][time] = gv[6 + wheel];
-			// frontLeftTorqueDesired[wheel][time] = controlForce[wheel];
-			// frontLeftTorqueActual[wheel][time] = gf[6 + wheel];
+			if (plotMotors && time < dur/rsStep) {
+				t[time] = time;
+				frontLeftAngDesired[wheel][time] = wheelVel[wheel];
+				frontLeftAngActual[wheel][time] = gv[6 + wheel];
+				frontLeftTorqueDesired[wheel][time] = controlForce[wheel];
+				frontLeftTorqueActual[wheel][time] = gf[6 + wheel];
+			}
 		}
 
 		robot->setGeneralizedForce({0, 0, 0, 0, 0, 0, controlForce[0], controlForce[1], controlForce[2], controlForce[3]});
@@ -356,61 +366,68 @@ int main(int argc, char* argv[]) {
 
 	server.killServer();
 
-	// plt::figure_size(1366, 768);
-	// plt::plot(t, frontLeftAngDesired[0], "r-");
-	// plt::plot(t, frontLeftAngActual[0], "b-");
-	// plt::title("Front Left Wheel Angular Velocity");
-	// plt::ylabel("Angular Velocity (rad/s)");
-	// plt::xlabel("Time (ms)");
+	// Calculate and display the duration
+    auto endTime = chrono::high_resolution_clock::now();
+    chrono::duration<double> elapsed = endTime - startTime;
+    cout << "\nLoop duration: " << elapsed.count() << " seconds." << endl;
 
-	// plt::figure_size(1366, 768);
-	// plt::plot(t, frontLeftTorqueDesired[0], "r-");
-	// plt::plot(t, frontLeftTorqueActual[0], "b-");
-	// plt::title("Front Left Wheel Torque");
-	// plt::ylabel("Torque (Nm)");
-	// plt::xlabel("Time (ms)");
+	if (plotMotors) {
+		plt::figure_size(1366, 768);
+		plt::plot(t, frontLeftAngDesired[0], "r-");
+		plt::plot(t, frontLeftAngActual[0], "b-");
+		plt::title("Front Left Wheel Angular Velocity");
+		plt::ylabel("Angular Velocity (rad/s)");
+		plt::xlabel("Time (ms)");
 
-	// plt::figure_size(1366, 768);
-	// plt::plot(t, frontLeftAngDesired[1], "r-");
-	// plt::plot(t, frontLeftAngActual[1], "b-");
-	// plt::title("Front Right Wheel Angular Velocity");
-	// plt::ylabel("Angular Velocity (rad/s)");
-	// plt::xlabel("Time (ms)");
+		plt::figure_size(1366, 768);
+		plt::plot(t, frontLeftTorqueDesired[0], "r-");
+		plt::plot(t, frontLeftTorqueActual[0], "b-");
+		plt::title("Front Left Wheel Torque");
+		plt::ylabel("Torque (Nm)");
+		plt::xlabel("Time (ms)");
 
-	// plt::figure_size(1366, 768);
-	// plt::plot(t, frontLeftTorqueDesired[0], "r-");
-	// plt::plot(t, frontLeftTorqueActual[0], "b-");
-	// plt::title("Front Right Wheel Torque");
-	// plt::ylabel("Torque (Nm)");
-	// plt::xlabel("Time (ms)");
+		plt::figure_size(1366, 768);
+		plt::plot(t, frontLeftAngDesired[1], "r-");
+		plt::plot(t, frontLeftAngActual[1], "b-");
+		plt::title("Front Right Wheel Angular Velocity");
+		plt::ylabel("Angular Velocity (rad/s)");
+		plt::xlabel("Time (ms)");
 
-	// plt::figure_size(1366, 768);
-	// plt::plot(t, frontLeftAngDesired[2], "r-");
-	// plt::plot(t, frontLeftAngActual[2], "b-");
-	// plt::title("Rear Left Wheel Angular Velocity");
-	// plt::ylabel("Angular Velocity (rad/s)");
-	// plt::xlabel("Time (ms)");
+		plt::figure_size(1366, 768);
+		plt::plot(t, frontLeftTorqueDesired[0], "r-");
+		plt::plot(t, frontLeftTorqueActual[0], "b-");
+		plt::title("Front Right Wheel Torque");
+		plt::ylabel("Torque (Nm)");
+		plt::xlabel("Time (ms)");
 
-	// plt::figure_size(1366, 768);
-	// plt::plot(t, frontLeftTorqueDesired[2], "r-");
-	// plt::plot(t, frontLeftTorqueActual[2], "b-");
-	// plt::title("Rear Left Wheel Torque");
-	// plt::ylabel("Torque (Nm)");
-	// plt::xlabel("Time (ms)");
+		plt::figure_size(1366, 768);
+		plt::plot(t, frontLeftAngDesired[2], "r-");
+		plt::plot(t, frontLeftAngActual[2], "b-");
+		plt::title("Rear Left Wheel Angular Velocity");
+		plt::ylabel("Angular Velocity (rad/s)");
+		plt::xlabel("Time (ms)");
 
-	// plt::figure_size(1366, 768);
-	// plt::plot(t, frontLeftAngDesired[3], "r-");
-	// plt::plot(t, frontLeftAngActual[3], "b-");
-	// plt::title("Rear Right Wheel Angular Velocity");
-	// plt::ylabel("Angular Velocity (rad/s)");
-	// plt::xlabel("Time (ms)");
+		plt::figure_size(1366, 768);
+		plt::plot(t, frontLeftTorqueDesired[2], "r-");
+		plt::plot(t, frontLeftTorqueActual[2], "b-");
+		plt::title("Rear Left Wheel Torque");
+		plt::ylabel("Torque (Nm)");
+		plt::xlabel("Time (ms)");
 
-	// plt::figure_size(1366, 768);
-	// plt::plot(t, frontLeftTorqueDesired[3], "r-");
-	// plt::plot(t, frontLeftTorqueActual[3], "b-");
-	// plt::title("Rear Right Wheel Torque");
-	// plt::ylabel("Torque (Nm)");
-	// plt::xlabel("Time (ms)");
+		plt::figure_size(1366, 768);
+		plt::plot(t, frontLeftAngDesired[3], "r-");
+		plt::plot(t, frontLeftAngActual[3], "b-");
+		plt::title("Rear Right Wheel Angular Velocity");
+		plt::ylabel("Angular Velocity (rad/s)");
+		plt::xlabel("Time (ms)");
 
-	plt::show();
+		plt::figure_size(1366, 768);
+		plt::plot(t, frontLeftTorqueDesired[3], "r-");
+		plt::plot(t, frontLeftTorqueActual[3], "b-");
+		plt::title("Rear Right Wheel Torque");
+		plt::ylabel("Torque (Nm)");
+		plt::xlabel("Time (ms)");
+
+		plt::show();
+	}
 }
