@@ -27,34 +27,34 @@
 using namespace std;
 namespace plt = matplotlibcpp;
 
-#define FlatMap true
+#define FlatMap false
 #define PlotMotors false
 #define RSStep 0.005
 
 /// Variables to share between threads
 
 // Data from Base Station
-atomic<bool> running(true);					// Toggles wheel activity
-atomic<float> inputAxisX(0.0f);				// Left Joystick X axis
-atomic<float> inputAxisY(0.0f);				// Left Joystick Y axis
-atomic<float> inputAxisW(0.0f);				// Right Joystick X axis
-atomic<float> inputAxisZ(0.0f);				// Right Joystick Y axis
-atomic<bool> buttonY(false);				// Trigger for toggling running
-atomic<bool> buttonB(false);				// Trigger for reseting rover position and velocity to lander
+atomic<bool> running(true);		// Toggles wheel activity
+atomic<float> inputAxisX(0.0f); // Left Joystick X axis
+atomic<float> inputAxisY(0.0f); // Left Joystick Y axis
+atomic<float> inputAxisW(0.0f); // Right Joystick X axis
+atomic<float> inputAxisZ(0.0f); // Right Joystick Y axis
+atomic<bool> buttonY(false);	// Trigger for toggling running
+atomic<bool> buttonB(false);	// Trigger for reseting rover position and velocity to lander
 
 // Data tp base station
-atomic<char *> frontCameraData(nullptr);	// Front Camera Data
-atomic<char *> rearCameraData(nullptr);		// Rear Camera Data
-atomic<double> motorCurrentDraw[4];			// Current Draw Data
+atomic<char *> frontCameraData(nullptr); // Front Camera Data
+atomic<char *> rearCameraData(nullptr);	 // Rear Camera Data
+atomic<double> motorCurrentDraw[4];		 // Current Draw Data
 
 // Other shared variables
-atomic<bool> wasButtonYPressed(false);		// Ensures button press only occurs on button down (wont be needed from nase station)
-atomic<bool> wasButtonBPressed(false);		// Ensures button press only occurs on button down (wont be needed from nase station)
-
+atomic<bool> wasButtonYPressed(false); // Ensures button press only occurs on button down (wont be needed from nase station)
+atomic<bool> wasButtonBPressed(false); // Ensures button press only occurs on button down (wont be needed from nase station)
 
 // Dimensions of the images (make sure these match the camera settings)
 const int width = 640;	// Replace with your actual width
 const int height = 480; // Replace with your actual height
+const int cameraFPS = 50;
 
 // Interrupt handler
 void signalHandler(int signum)
@@ -268,21 +268,13 @@ int main(int argc, char *argv[])
 	auto binaryPath = raisim::Path::setFromArgv(argv[0]);
 	raisim::RaiSimMsg::setFatalCallback([]()
 										{ throw; });
-
 	// Setup World
 	raisim::World world;
 	world.setTimeStep(RSStep);
 
-	raisim::TerrainProperties terrainProperties;
 	// Setup Ground
-	if (!FlatMap)
-	{
-		terrainProperties.zScale = 1.5;
-	}
-	else
-	{
-		terrainProperties.zScale = 0.0;
-	}
+	raisim::TerrainProperties terrainProperties;
+	terrainProperties.zScale = FlatMap ? 0.0 : 1.8;
 	terrainProperties.frequency = 0.2;
 	terrainProperties.xSize = 70.0;
 	terrainProperties.ySize = 70.0;
@@ -291,19 +283,18 @@ int main(int argc, char *argv[])
 	terrainProperties.fractalOctaves = 3;
 	terrainProperties.fractalLacunarity = 2.0;
 	terrainProperties.fractalGain = 0.25;
-
 	auto hm = world.addHeightMap(0.0, 0.0, terrainProperties, "sand");
 	hm->setAppearance("soil2");
 
+	// Add lander platform
 	raisim::Mat<3, 3> inertia;
 	inertia.setIdentity();
 	raisim::Vec<3> com = {0, 0, 0};
-
 	auto lander = world.addMesh(binaryPath.getDirectory() + "/rsc/environment/meshes/lander(1).obj", 1.0, inertia, com);
 	lander->setPosition(raisim::Vec<3>{0, 0, 1.5});
 	lander->setBodyType(raisim::BodyType::STATIC);
 
-	// Setup rover Parameters
+	// Add Rover
 	auto rover = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/huskyDemo/urdf/husky.urdf");
 	rover->setName("smb");
 	Eigen::VectorXd gc(rover->getGeneralizedCoordinateDim()), gv(rover->getDOF()), ga(rover->getDOF()), gf(rover->getDOF()), damping(rover->getDOF());
@@ -316,17 +307,14 @@ int main(int argc, char *argv[])
 	damping.tail(4).setConstant(1.);
 	rover->setJointDamping(damping);
 
-	// Virtual Camera
+	// Virtual Cameras
 	auto frontCam = rover->getSensorSet("depth_camera_front_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
-
 	auto rearCam = rover->getSensorSet("depth_camera_rear_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
 
-	/// launch raisim server
+	/// Launch raisim server
 	raisim::RaisimServer server(&world);
-
-	// scans->resize(scanSize1*scanSize2);
 	server.launchServer();
 
 	// Start the controller input reading in a separate thread
@@ -336,8 +324,6 @@ int main(int argc, char *argv[])
 	// Start camera display thread
 	thread displayThread(displayImages);
 
-	bool active = false;
-
 	// Wait for server connection
 	cout << "Awaiting Connection to raisim server" << endl;
 	while (!server.isConnected())
@@ -345,30 +331,23 @@ int main(int argc, char *argv[])
 	cout << "Server Connected" << endl;
 	server.focusOn(rover);
 
-	// Motor Parameter
+	// Drivetrain Parameter
 	int motorV = 24;
 	double motorI = 10;
 	int motorKv = 100;
-	double motorKt = (15*sqrt(3)/M_PI)/ motorKv;
-	
-	// Speed Controller Efficiency
+	double motorKt = (15 * sqrt(3) / M_PI) / motorKv;
 	double ESCeff = 0.78;
-
-	// Gear
 	int reduction = 50;
 	double gearboxEff = 0.9;
 	double maxGearboxTorque = 20;
 
 	double maxWheelRPM = motorV * motorKv * ESCeff;
 	double maxWheelRads = maxWheelRPM * M_PI / 30 / 50;
-
 	double maxMotorTorque = motorKt * motorI;
-	cout << maxMotorTorque <<endl;
-	// maxMotorTorque = 1;
 	double maxWheelTorque = maxMotorTorque * reduction;
-	
 
 	// Control Parameters
+	bool active = false;
 	double wheelVel[4] = {0.0, 0.0, 0.0, 0.0};
 	double controlForce[4] = {0.0, 0.0, 0.0, 0.0};
 	double kp = 10.0;
@@ -387,8 +366,8 @@ int main(int argc, char *argv[])
 	vector<vector<double>> frontLeftTorqueActual(4, vector<double>(dur / RSStep));
 	vector<vector<double>> frontLeftTorqueDesired(4, vector<double>(dur / RSStep));
 
+	// Set start time
 	int time = 0;
-	// Record start time
 	auto startTime = chrono::high_resolution_clock::now();
 
 	// Main Loop
@@ -398,7 +377,7 @@ int main(int argc, char *argv[])
 		RS_TIMED_LOOP(int(world.getTimeStep() * 1e6))
 		server.integrateWorldThreadSafe();
 
-		// Get rover State
+		// Get rover State (In real rover, replace with functions that get the current data from sensors)
 		gc = rover->getGeneralizedCoordinate().e();
 		gv = rover->getGeneralizedVelocity().e();
 		ga = rover->getGeneralizedAcceleration().e();
@@ -420,10 +399,10 @@ int main(int argc, char *argv[])
 			wheelVel[3] = 0.0;
 		}
 
-		// PID Controller with velocity input and torque output
+		// Per Wheek
 		for (size_t wheel = 0; wheel < 4; wheel++)
 		{
-
+			// PID Controller with velocity input and torque output
 			// PID Terms
 			Tp = kp * (wheelVel[wheel] - gv[6 + wheel]);
 			Td = kd * (wheelVel[wheel] - gv[6 + wheel]) / RSStep;
@@ -445,23 +424,25 @@ int main(int argc, char *argv[])
 				frontLeftTorqueActual[wheel][time] = gf[6 + wheel];
 			}
 
-			motorCurrentDraw[wheel] = abs(controlForce[wheel]) / (reduction * gearboxEff * motorKt);
+			// Calculate motor current draws
+			motorCurrentDraw[wheel] = abs(gf[6 + wheel]) / (reduction * gearboxEff * motorKt);
 		}
 
+		// Send Forces to Rover simulation (For Real system replace with function to send values to motors via can)
 		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, controlForce[0], controlForce[1], controlForce[2], controlForce[3]});
 
-		if (time % 20 == 0) {
-			// Print in the specified format
-			cout << fixed << setprecision(2); // Set precision to 2 decimal places
+		// Display Currents (Only needed until display made)
+		if ((time % (1000 / cameraFPS)) < RSStep)
+		{
+			cout << fixed << setprecision(2);
 			cout << "Front Left Current Draw: " << motorCurrentDraw[0] << " A, "
-					<< "Front Right Current Draw: " << motorCurrentDraw[1] << " A, "
-					<< "Rear Left Current Draw: " << motorCurrentDraw[2] << " A, "
-					<< "Rear Right Current Draw: " << motorCurrentDraw[3] << " A, "
-					<< "Total Current Draw: " << motorCurrentDraw[0] + motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[3] << " A   " <<endl;
-			
+				 << "Front Right Current Draw: " << motorCurrentDraw[1] << " A, "
+				 << "Rear Left Current Draw: " << motorCurrentDraw[2] << " A, "
+				 << "Rear Right Current Draw: " << motorCurrentDraw[3] << " A, "
+				 << "Total Current Draw: " << motorCurrentDraw[0] + motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[3] << " A   " << endl;
 		}
 
-
+		// Toggle rover activation
 		if (buttonY)
 		{ // Only runs on a true "buttonY" from rising edge detection
 			if (!active)
@@ -479,7 +460,7 @@ int main(int argc, char *argv[])
 			buttonY = false; // Reset buttonY after toggling to await the next rising edge
 		}
 
-		// If fallen off edge send back to centre
+		// If fallen off edge or triggered send back to centre
 		if (fabs(gc[0]) > 35. || fabs(gc[1]) > 35. || buttonB)
 		{
 			gc.segment<7>(0) << 0, 0, 1.6, 0.7071068, 0, 0, -0.7071068;
@@ -488,16 +469,15 @@ int main(int argc, char *argv[])
 			buttonB = false;
 		}
 
-		if (time % 5 == 0)
-		{ // Display only every 'displayInterval' iterations
-
-			
-			// cout << "Camera Display: " << k <<endl;
+		// Display only every couple iterations (For Real system replace with function to get camera data)
+		if ((time % (1000 / cameraFPS)) < RSStep)
+		{
 			frontCameraData = frontCam->getImageBuffer().data();
 			rearCameraData = rearCam->getImageBuffer().data();
 		}
 
-		time++;
+		// Increment Time
+		time += RSStep * 1000;
 	}
 
 	server.killServer();
