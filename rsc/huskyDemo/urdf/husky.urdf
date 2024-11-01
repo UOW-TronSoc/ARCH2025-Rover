@@ -58,9 +58,6 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
   <!-- Wheel Properties -->
   <!-- Base link is on the ground under the robot -->
   <link name="base_footprint"/>
-  <gazebo reference="base_footprint">
-    <material>Gazebo/DarkGrey</material>
-  </gazebo>
   <joint name="chassis_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0.14493"/>
     <parent link="base_footprint"/>
@@ -88,26 +85,132 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
       <inertia ixx="0.6022" ixy="-0.02364" ixz="-0.1197" iyy="1.7386" iyz="-0.001544" izz="2.0296"/>
     </inertial>
   </link>
-  <gazebo reference="base_link">
-    </gazebo>
+
+
+
+
+
+
   <!-- IMU Link is the standard mounting position for the UM6 IMU.-->
   <!-- Can be modified with environment variables in /etc/ros/setup.bash -->
-
-  <link name="imu_link">
-    <visual>
-      <origin rpy="1.570795 0 0.0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/velodyne.STL"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="imu_joint" type="fixed">
-    <origin rpy="0 0 3.14159" xyz="-0.25 0 0.309"/>
+  <joint name="depth_camera_front_camera_joint" type="fixed">
+    <origin rpy="0 0.31415926535 3.14159" xyz="-0.2 0 0.309"/>
     <parent link="base_link"/>
-    <child link="imu_link"/>
+    <child link="depth_camera_front_camera"/>
   </joint>
-  <gazebo reference="imu_link">
-    </gazebo>
+
+    <!-- Camera link -->
+    <link name="depth_camera_front_camera">
+        <visual>
+            <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://anymal_c_simple_description/meshes/depth_camera.dae" scale="1.0 1.0 1.0"/>
+            </geometry>
+        </visual>
+        <inertial>
+            <origin rpy="0 0 0" xyz="-0.021 -0.002 0.025"/>
+            <mass value="0.16043"/>
+            <inertia ixx="0.000637051" ixy="0.000484569" ixz="0.000424211" iyy="0.000929402" iyz="5.138e-06" izz="0.000484569"/>
+        </inertial>
+    </link>
+    <!-- Camera parent joint -->
+    <!-- Frame lies on the left ir camera according to any_realsense2_camera urdf. -->
+    <joint name="depth_camera_front_camera_to_camera_parent" type="fixed">
+        <parent link="depth_camera_front_camera"/>
+        <child link="depth_camera_front_camera_parent"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0255 0.0175 0.0"/>
+    </joint>
+    <!-- Camera parent link -->
+    <link name="depth_camera_front_camera_parent" model="d435i" serial_number="dummy" sensor="realsense435.xml"/>
+    <!-- Depth optical frame joint -->
+    <joint name="depth_camera_front_camera_parent_to_depth_optical_frame" type="fixed">
+        <parent link="depth_camera_front_camera_parent"/>
+        <child link="depth_camera_front_depth_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <!-- Depth optical frame link -->
+    <link name="depth_camera_front_depth_optical_frame"/>
+    <!-- Camera color frame joint -->
+    <joint name="depth_camera_front_camera_parent_to_color_frame" type="fixed">
+        <parent link="depth_camera_front_camera_parent"/>
+        <child link="depth_camera_front_color_frame"/>
+        <origin rpy="0 0 0" xyz="0 0.015 0"/>
+    </joint>
+    <!-- Camera color frame link -->
+    <link name="depth_camera_front_color_frame"/>
+    <!-- Camera color optical joint -->
+    <joint name="depth_camera_front_color_frame_to_color_optical_frame" type="fixed">
+        <parent link="depth_camera_front_color_frame"/>
+        <child link="depth_camera_front_color_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <!-- Camera color optical link -->
+    <link name="depth_camera_front_color_optical_frame"/>
+
+
+    <!-- IMU Link is the standard mounting position for the UM6 IMU.-->
+  <!-- Can be modified with environment variables in /etc/ros/setup.bash -->
+  <joint name="depth_camera_rear_camera_joint" type="fixed">
+    <origin rpy="0 0.31415926535 0" xyz="0.2 0 0.309"/>
+    <parent link="base_link"/>
+    <child link="depth_camera_rear_camera"/>
+  </joint>
+
+    <!-- Camera link -->
+    <link name="depth_camera_rear_camera">
+        <visual>
+            <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://anymal_c_simple_description/meshes/depth_camera.dae" scale="1.0 1.0 1.0"/>
+            </geometry>
+        </visual>
+        <inertial>
+            <origin rpy="0 0 0" xyz="-0.021 -0.002 0.025"/>
+            <mass value="0.16043"/>
+            <inertia ixx="0.000637051" ixy="0.000484569" ixz="0.000424211" iyy="0.000929402" iyz="5.138e-06" izz="0.000484569"/>
+        </inertial>
+    </link>
+    <!-- Camera parent joint -->
+    <!-- Frame lies on the left ir camera according to any_realsense2_camera urdf. -->
+    <joint name="depth_camera_rear_camera_to_camera_parent" type="fixed">
+        <parent link="depth_camera_rear_camera"/>
+        <child link="depth_camera_rear_camera_parent"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0255 0.0175 0.0"/>
+    </joint>
+    <!-- Camera parent link -->
+    <link name="depth_camera_rear_camera_parent" model="d435i" serial_number="dummy" sensor="realsense435.xml"/>
+    <!-- Depth optical frame joint -->
+    <joint name="depth_camera_rear_camera_parent_to_depth_optical_frame" type="fixed">
+        <parent link="depth_camera_rear_camera_parent"/>
+        <child link="depth_camera_rear_depth_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <!-- Depth optical frame link -->
+    <link name="depth_camera_rear_depth_optical_frame"/>
+    <!-- Camera color frame joint -->
+    <joint name="depth_camera_rear_camera_parent_to_color_frame" type="fixed">
+        <parent link="depth_camera_rear_camera_parent"/>
+        <child link="depth_camera_rear_color_frame"/>
+        <origin rpy="0 0 0" xyz="0 0.015 0"/>
+    </joint>
+    <!-- Camera color frame link -->
+    <link name="depth_camera_rear_color_frame"/>
+    <!-- Camera color optical joint -->
+    <joint name="depth_camera_rear_color_frame_to_color_optical_frame" type="fixed">
+        <parent link="depth_camera_rear_color_frame"/>
+        <child link="depth_camera_rear_color_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <!-- Camera color optical link -->
+    <link name="depth_camera_rear_color_optical_frame"/>
+
+
+
+
+
+
+
+
   <!-- Husky wheel macros -->
   <link name="front_left_wheel_link">
   	<contact>
@@ -136,15 +239,6 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
       </geometry>
     </collision>
   </link>
-  <gazebo reference="front_left_wheel_link">
-    <mu1 value="1.0"/>
-    <mu2 value="1.0"/>
-    <kp value="10000000.0"/>
-    <kd value="1.0"/>
-    <fdir1 value="1 0 0"/>
-    <material>Gazebo/Grey</material>
-    <turnGravityOff>false</turnGravityOff>
-  </gazebo>
   <joint name="front_left_wheel" type="continuous">
     <parent link="base_link"/>
     <child link="front_left_wheel_link"/>
@@ -187,15 +281,6 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
       </geometry>
     </collision>
   </link>
-  <gazebo reference="front_right_wheel_link">
-    <mu1 value="1.0"/>
-    <mu2 value="1.0"/>
-    <kp value="10000000.0"/>
-    <kd value="1.0"/>
-    <fdir1 value="1 0 0"/>
-    <material>Gazebo/Grey</material>
-    <turnGravityOff>false</turnGravityOff>
-  </gazebo>
   <joint name="front_right_wheel" type="continuous">
     <parent link="base_link"/>
     <child link="front_right_wheel_link"/>
@@ -238,15 +323,6 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
       </geometry>
     </collision>
   </link>
-  <gazebo reference="rear_left_wheel_link">
-    <mu1 value="1.0"/>
-    <mu2 value="1.0"/>
-    <kp value="10000000.0"/>
-    <kd value="1.0"/>
-    <fdir1 value="1 0 0"/>
-    <material>Gazebo/Grey</material>
-    <turnGravityOff>false</turnGravityOff>
-  </gazebo>
   <joint name="rear_left_wheel" type="continuous">
     <parent link="base_link"/>
     <child link="rear_left_wheel_link"/>
@@ -289,15 +365,6 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
       </geometry>
     </collision>
   </link>
-  <gazebo reference="rear_right_wheel_link">
-    <mu1 value="1.0"/>
-    <mu2 value="1.0"/>
-    <kp value="10000000.0"/>
-    <kd value="1.0"/>
-    <fdir1 value="1 0 0"/>
-    <material>Gazebo/Grey</material>
-    <turnGravityOff>false</turnGravityOff>
-  </gazebo>
   <joint name="rear_right_wheel" type="continuous">
     <parent link="base_link"/>
     <child link="rear_right_wheel_link"/>
@@ -326,9 +393,6 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
     <parent link="base_link"/>
     <child link="top_plate_link"/>
   </joint>
-  <gazebo reference="top_plate_link">
-    <material>Gazebo/Yellow</material>
-  </gazebo>
   <link name="user_rail_link">
     <visual>
       <geometry>
@@ -342,9 +406,6 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
     <parent link="base_link"/>
     <child link="user_rail_link"/>
   </joint>
-  <gazebo reference="user_rail_link">
-    <material>Gazebo/DarkGrey</material>
-  </gazebo>
   <link name="front_bumper_link">
     <visual>
       <geometry>
@@ -358,9 +419,6 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
     <parent link="base_link"/>
     <child link="front_bumper_link"/>
   </joint>
-  <gazebo reference="front_bumper_link">
-    <material>Gazebo/DarkGrey</material>
-  </gazebo>
   <link name="rear_bumper_link">
     <visual>
       <geometry>
@@ -374,8 +432,5 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
     <parent link="base_link"/>
     <child link="rear_bumper_link"/>
   </joint>
-  <gazebo reference="rear_bumper_link">
-    <material>Gazebo/DarkGrey</material>
-  </gazebo>
 </robot>
 

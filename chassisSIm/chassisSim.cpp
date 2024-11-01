@@ -290,7 +290,7 @@ int main(int argc, char *argv[])
 	raisim::Mat<3, 3> inertia;
 	inertia.setIdentity();
 	raisim::Vec<3> com = {0, 0, 0};
-	auto lander = world.addMesh(binaryPath.getDirectory() + "/rsc/environment/meshes/lander(1).obj", 1.0, inertia, com);
+	auto lander = world.addMesh(binaryPath.getDirectory() + "/rsc/environment/meshes/lander.obj", 1.0, inertia, com);
 	lander->setPosition(raisim::Vec<3>{0, 0, 1.5});
 	lander->setBodyType(raisim::BodyType::STATIC);
 
