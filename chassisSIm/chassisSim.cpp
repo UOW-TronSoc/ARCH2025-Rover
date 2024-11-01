@@ -42,176 +42,239 @@ atomic<bool> wasButtonYPressed(false);
 atomic<bool> buttonB(false);
 atomic<bool> wasButtonBPressed(false);
 
+// Atomic pointers to the raw image buffers from the cameras
+std::atomic<char *> frontCameraData(nullptr);
+std::atomic<char *> rearCameraData(nullptr);
+
+// Dimensions of the images (make sure these match the camera settings)
+const int width = 640;	// Replace with your actual width
+const int height = 480; // Replace with your actual height
+
 // Interrupt handler
-void signalHandler(int signum) {
-    running = false; // Stop the loops
+void signalHandler(int signum)
+{
+	running = false; // Stop the loops
 }
 
 // Function for reading from controller in new thread
-void readController() {
-    // Controller connection status
-    int fd;
+void readController()
+{
+	// Controller connection status
+	int fd;
 
-    // Loop until the Controller is successfully opened
-    while (true) {
+	// Loop until the Controller is successfully opened
+	while (true)
+	{
 
-        // Input event stream for contorller (might need to adjust for when event changes )
-        const string device = SteelSeriesDeviceFinder::get_device_path("SteelSeries Stratus XL");
+		// Input event stream for contorller (might need to adjust for when event changes )
+		const string device = SteelSeriesDeviceFinder::get_device_path("SteelSeries Stratus XL");
 
-        // Access controller
-        fd = open(device.c_str(), O_RDONLY);
+		// Access controller
+		fd = open(device.c_str(), O_RDONLY);
 
-        if (fd == -1) {
-            cerr << "Failed to open input device "<<device<<". Retrying..." << endl;
-            sleep(1);  // Wait for 1 second before trying again
-        } else {
-            cout << "Connected to device: " << device << endl;
-            break;  // Exit loop when successfully opened
-        }
-    }
+		if (fd == -1)
+		{
+			cerr << "Failed to open input device " << device << ". Retrying..." << endl;
+			sleep(1); // Wait for 1 second before trying again
+		}
+		else
+		{
+			cout << "Connected to device: " << device << endl;
+			break; // Exit loop when successfully opened
+		}
+	}
 
-    struct input_event ev;
+	struct input_event ev;
 
-    // Counter for low velocity to allow joystick parsing quickly through zero zone
-    static int lowVelCounter = 0;
+	// Counter for low velocity to allow joystick parsing quickly through zero zone
+	static int lowVelCounter = 0;
 
-    // Controlle reading cycle
-    while (running) {
-        // Read event
-        ssize_t n = read(fd, &ev, sizeof(ev));
+	// Controlle reading cycle
+	while (running)
+	{
+		// Read event
+		ssize_t n = read(fd, &ev, sizeof(ev));
 
-        // Check if event read failes
-        if (n == (ssize_t)-1) {
-            cerr << "Failed to read input event." << endl;
-            break;
-        }
+		// Check if event read failes
+		if (n == (ssize_t)-1)
+		{
+			cerr << "Failed to read input event." << endl;
+			break;
+		}
 
-        // Only read button press (key) and joystick (abs) readings
-        if (ev.type == EV_ABS || ev.type == EV_KEY) {
-            // Handle deadzone for Right Trigger (code 9) and Left Trigger (code 10)
-            if ((ev.code == 9 || ev.code == 10) && abs(ev.value) < 2048) {
-                continue; // Skip further processing if within the deadzone
-            }
+		// Only read button press (key) and joystick (abs) readings
+		if (ev.type == EV_ABS || ev.type == EV_KEY)
+		{
+			// Handle deadzone for Right Trigger (code 9) and Left Trigger (code 10)
+			if ((ev.code == 9 || ev.code == 10) && abs(ev.value) < 2048)
+			{
+				continue; // Skip further processing if within the deadzone
+			}
 
-            // Switch case for each event handling
-            switch (ev.code) {
-                case 0: // Left Joystick X
-                    // cout << "Left Joystick X: " << ev.value << " (" 
-                    //           << (ev.value < 0 ? "Left" : "Right") << ")" << endl;
-                    inputAxisX = ev.value;
-                    break;
-                case 1: // Left Joystick Y
-                    // cout << "Left Joystick Y: " << ev.value << " (" 
-                    //           << (ev.value < 0 ? "Up" : "Down") << ")" << endl;
+			// Switch case for each event handling
+			switch (ev.code)
+			{
+			case 0: // Left Joystick X
+				// cout << "Left Joystick X: " << ev.value << " ("
+				//           << (ev.value < 0 ? "Left" : "Right") << ")" << endl;
+				inputAxisX = ev.value;
+				break;
+			case 1: // Left Joystick Y
+				// cout << "Left Joystick Y: " << ev.value << " ("
+				//           << (ev.value < 0 ? "Up" : "Down") << ")" << endl;
 
-                    inputAxisY = ev.value;
-                    break;
-                case 2: // Right Joystick X
-                    // cout << "Right Joystick X: " << ev.value << " (" 
-                    //           << (ev.value < 0 ? "Left" : "Right") << ")" << endl;
-					inputAxisW = ev.value;
-                    break;
-                case 5: // Right Joystick Y
-                    // cout << "Right Joystick Y: " << ev.value << " (" 
-                    //           << (ev.value < 0 ? "Up" : "Down") << ")" << endl;
-					inputAxisZ = ev.value;
-                    break;
-                case 16: // Dpad X
-                    // cout << "Dpad X: " << ev.value << " (" 
-                    //           << (ev.value < 0 ? "Left" : "Right") << ")" << endl;
-                    // dPadX = ev.value;
-                    break;
-                case 17: // DPad Y
-                    // cout << "DPad Y: " << ev.value << " (" 
-                    //           << (ev.value > 0 ? "Down" : "Up") << ")" << endl;
-                    // dPadY = ev.value;
-                    break;
-                // case 9: // Right Trigger
-                //     // cout << "Right Trigger: " << ev.value << endl;
-                //     break;
-                // case 10: // Left Trigger
-                //     // cout << "Left Trigger: " << ev.value << endl;
-                //     break;
-                // case 317: // Left Joystick Click
-                //     // cout << "Left Joystick Click: " << ev.value << " (" 
-                //     //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-                //     break;
-                case 318: // Right Joystick Click
-                    // cout << "Right Joystick Click: " << ev.value << " (" 
-                    //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-                    running = false;
-                    break;
-                case 304: // Button A
-                    // cout << "Button A: " << ev.value << " (" 
-                    //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-                    // buttonA = ev.value;
-                    break;
-                case 307: // Button X
-                    // cout << "Button X: " << ev.value << " (" 
-                    //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-                    // buttonX = ev.value;
-                    break;
-                case 305: // Button B
-                    static bool wasButtonBPressed = false; // Track the previous state of Button Y
-					
-					if (ev.value == 1 && !wasButtonBPressed) {
-						// Button Y is pressed and was not pressed before (rising edge)
-						buttonB = true;  // Signal the button press
-						wasButtonBPressed = true; // Update the state to pressed
-					} else if (ev.value == 0) {
-						// Button Y is released, reset the press state
-						wasButtonBPressed = false;
-						buttonB = false;  // Clear buttonB to prevent continuous activation
-					}
-					break;
-                case 308: // Button Y
-					static bool wasButtonYPressed = false; // Track the previous state of Button Y
-					
-					if (ev.value == 1 && !wasButtonYPressed) {
-						// Button Y is pressed and was not pressed before (rising edge)
-						buttonY = true;  // Signal the button press
-						wasButtonYPressed = true; // Update the state to pressed
-					} else if (ev.value == 0) {
-						// Button Y is released, reset the press state
-						wasButtonYPressed = false;
-						buttonY = false;  // Clear buttonY to prevent continuous activation
-					}
-					break;
-                case 311: // Right Bumper
-                    // cout << "Right Bumper: " << ev.value << " (" 
-                    //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-                    // rightBumper = ev.value;
-                    break;
-                case 310: // Left Bumper
-                    // cout << "Left Bumper: " << ev.value << " (" 
-                    //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-                    // leftBumper = ev.value;
-                    break;
-                default:
-                    // cout << "Unknown event. Code: " << ev.code << " Value: " << ev.value << endl;
-                    break;
-            }
-        }
-    }
+				inputAxisY = ev.value;
+				break;
+			case 2: // Right Joystick X
+					// cout << "Right Joystick X: " << ev.value << " ("
+					//           << (ev.value < 0 ? "Left" : "Right") << ")" << endl;
+				inputAxisW = ev.value;
+				break;
+			case 5: // Right Joystick Y
+					// cout << "Right Joystick Y: " << ev.value << " ("
+					//           << (ev.value < 0 ? "Up" : "Down") << ")" << endl;
+				inputAxisZ = ev.value;
+				break;
+			case 16: // Dpad X
+				// cout << "Dpad X: " << ev.value << " ("
+				//           << (ev.value < 0 ? "Left" : "Right") << ")" << endl;
+				// dPadX = ev.value;
+				break;
+			case 17: // DPad Y
+				// cout << "DPad Y: " << ev.value << " ("
+				//           << (ev.value > 0 ? "Down" : "Up") << ")" << endl;
+				// dPadY = ev.value;
+				break;
+			// case 9: // Right Trigger
+			//     // cout << "Right Trigger: " << ev.value << endl;
+			//     break;
+			// case 10: // Left Trigger
+			//     // cout << "Left Trigger: " << ev.value << endl;
+			//     break;
+			// case 317: // Left Joystick Click
+			//     // cout << "Left Joystick Click: " << ev.value << " ("
+			//     //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
+			//     break;
+			case 318: // Right Joystick Click
+				// cout << "Right Joystick Click: " << ev.value << " ("
+				//           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
+				running = false;
+				break;
+			case 304: // Button A
+				// cout << "Button A: " << ev.value << " ("
+				//           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
+				// buttonA = ev.value;
+				break;
+			case 307: // Button X
+				// cout << "Button X: " << ev.value << " ("
+				//           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
+				// buttonX = ev.value;
+				break;
+			case 305:								   // Button B
+				static bool wasButtonBPressed = false; // Track the previous state of Button Y
 
-    // close the device connection
-    close(fd);
+				if (ev.value == 1 && !wasButtonBPressed)
+				{
+					// Button Y is pressed and was not pressed before (rising edge)
+					buttonB = true;			  // Signal the button press
+					wasButtonBPressed = true; // Update the state to pressed
+				}
+				else if (ev.value == 0)
+				{
+					// Button Y is released, reset the press state
+					wasButtonBPressed = false;
+					buttonB = false; // Clear buttonB to prevent continuous activation
+				}
+				break;
+			case 308:								   // Button Y
+				static bool wasButtonYPressed = false; // Track the previous state of Button Y
+
+				if (ev.value == 1 && !wasButtonYPressed)
+				{
+					// Button Y is pressed and was not pressed before (rising edge)
+					buttonY = true;			  // Signal the button press
+					wasButtonYPressed = true; // Update the state to pressed
+				}
+				else if (ev.value == 0)
+				{
+					// Button Y is released, reset the press state
+					wasButtonYPressed = false;
+					buttonY = false; // Clear buttonY to prevent continuous activation
+				}
+				break;
+			case 311: // Right Bumper
+				// cout << "Right Bumper: " << ev.value << " ("
+				//           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
+				// rightBumper = ev.value;
+				break;
+			case 310: // Left Bumper
+				// cout << "Left Bumper: " << ev.value << " ("
+				//           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
+				// leftBumper = ev.value;
+				break;
+			default:
+				// cout << "Unknown event. Code: " << ev.code << " Value: " << ev.value << endl;
+				break;
+			}
+		}
+	}
+
+	// close the device connection
+	close(fd);
 }
 
-int main(int argc, char* argv[]) {
+// Function to run in a separate thread to process and display images
+void displayImages()
+{
+	while (running)
+	{
+
+		// Check if we have new data for Camera 1
+		if (frontCameraData.load() != nullptr)
+		{
+			// Create a cv::Mat from the raw data and convert BGRA to BGR
+			cv::Mat imageBGRAFront(height, width, CV_8UC4, frontCameraData.load());
+			cv::Mat imageBGRFront;
+			cv::cvtColor(imageBGRAFront, imageBGRFront, cv::COLOR_BGRA2BGR);
+			cv::imshow("Front Camera Image", imageBGRFront);
+
+			frontCameraData.store(nullptr); // Reset the pointer after processing
+		}
+
+		// Check if we have new data for Camera 2
+		if (rearCameraData.load() != nullptr)
+		{
+			// Create a cv::Mat from the raw data and convert BGRA to BGR
+			cv::Mat imageBGRARear(height, width, CV_8UC4, rearCameraData.load());
+			cv::Mat imageBGRRear;
+			cv::cvtColor(imageBGRARear, imageBGRRear, cv::COLOR_BGRA2BGR);
+			cv::imshow("Rear Camera Image", imageBGRRear);
+
+			rearCameraData.store(nullptr); // Reset the pointer after processing
+		}
+
+		cv::waitKey(1); // Minimal delay to allow OpenCV to process display events
+	}
+}
+
+int main(int argc, char *argv[])
+{
 	auto binaryPath = raisim::Path::setFromArgv(argv[0]);
-	raisim::RaiSimMsg::setFatalCallback([](){throw;});
+	raisim::RaiSimMsg::setFatalCallback([]()
+										{ throw; });
 
 	// Setup World
 	raisim::World world;
 	world.setTimeStep(RSStep);
 
-
 	raisim::TerrainProperties terrainProperties;
 	// Setup Ground
-	if (!FlatMap) {
+	if (!FlatMap)
+	{
 		terrainProperties.zScale = 1.5;
-	} else {
+	}
+	else
+	{
 		terrainProperties.zScale = 0.0;
 	}
 	terrainProperties.frequency = 0.2;
@@ -231,15 +294,15 @@ int main(int argc, char* argv[]) {
 	raisim::Vec<3> com = {0, 0, 0};
 
 	auto lander = world.addMesh(binaryPath.getDirectory() + "/rsc/environment/meshes/lander(1).obj", 1.0, inertia, com);
-	lander->setPosition(raisim::Vec<3>{0,0,1.5});
+	lander->setPosition(raisim::Vec<3>{0, 0, 1.5});
 	lander->setBodyType(raisim::BodyType::STATIC);
-	
 
 	// Setup rover Parameters
 	auto rover = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/huskyDemo/urdf/husky.urdf");
 	rover->setName("smb");
 	Eigen::VectorXd gc(rover->getGeneralizedCoordinateDim()), gv(rover->getDOF()), ga(rover->getDOF()), gf(rover->getDOF()), damping(rover->getDOF());
-	gc.setZero(); gv.setZero();
+	gc.setZero();
+	gv.setZero();
 	gc.segment<7>(0) << 0, 0, 1.6, 0.7071068, 0, 0, -0.7071068;
 	rover->setGeneralizedCoordinate(gc);
 	rover->setGeneralizedVelocity(gv);
@@ -249,10 +312,10 @@ int main(int argc, char* argv[]) {
 
 	// Virtual Camera
 	auto frontCam = rover->getSensorSet("depth_camera_front_camera_parent")->getSensor<raisim::RGBCamera>("color");
-  	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
+	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
 
 	auto rearCam = rover->getSensorSet("depth_camera_rear_camera_parent")->getSensor<raisim::RGBCamera>("color");
-  	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
+	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
 
 	/// launch raisim server
 	raisim::RaisimServer server(&world);
@@ -261,18 +324,20 @@ int main(int argc, char* argv[]) {
 	server.launchServer();
 
 	// Start the controller input reading in a separate thread
-    thread input_thread(readController);
-    // Register signal handler
-    signal(SIGINT, signalHandler);
+	thread input_thread(readController);
+	// Register signal handler
+	signal(SIGINT, signalHandler);
+	// Start camera display thread
+	thread displayThread(displayImages);
 
 	bool active = false;
 
 	// Wait for server connection
-    cout << "Awaiting Connection to raisim server" << endl;
-    while (!server.isConnected())
-        ;
-    cout << "Server Connected" << endl;
-	// server.focusOn(rover);
+	cout << "Awaiting Connection to raisim server" << endl;
+	while (!server.isConnected())
+		;
+	cout << "Server Connected" << endl;
+	server.focusOn(rover);
 
 	// Motor Parameter
 	int motorV = 24;
@@ -281,7 +346,7 @@ int main(int argc, char* argv[]) {
 	double ESCeff = 0.78;
 	double maxWheelRPM = motorV * motorKv * ESCeff;
 	int reduction = 50;
-	double maxWheelRads = maxWheelRPM * M_PI/30 / 50;
+	double maxWheelRads = maxWheelRPM * M_PI / 30 / 50;
 	double maxwheelTorque = motorTorque * reduction;
 	double maxWheelTorqueDelta = 5;
 
@@ -305,12 +370,13 @@ int main(int argc, char* argv[]) {
 
 	int time = 0;
 	// Record start time
-    auto startTime = chrono::high_resolution_clock::now();
+	auto startTime = chrono::high_resolution_clock::now();
 
 	// Main Loop
-	while(running) {
+	while (running)
+	{
 		// Real Time delay and physics integration
-		RS_TIMED_LOOP(int(world.getTimeStep()*1e6))
+		RS_TIMED_LOOP(int(world.getTimeStep() * 1e6))
 		server.integrateWorldThreadSafe();
 
 		// Get rover State
@@ -320,12 +386,15 @@ int main(int argc, char* argv[]) {
 		gf = rover->getGeneralizedForce().e();
 
 		// Set Motor Speeds
-		if (active) {
+		if (active)
+		{
 			wheelVel[0] = (inputAxisZ / 2047) * maxWheelRads;
 			wheelVel[1] = (inputAxisY / 2047) * maxWheelRads;
 			wheelVel[2] = (inputAxisZ / 2047) * maxWheelRads;
 			wheelVel[3] = (inputAxisY / 2047) * maxWheelRads;
-		} else {
+		}
+		else
+		{
 			wheelVel[0] = 0.0;
 			wheelVel[1] = 0.0;
 			wheelVel[2] = 0.0;
@@ -333,7 +402,8 @@ int main(int argc, char* argv[]) {
 		}
 
 		// PID Controller with velocity input and torque output
-		for (size_t wheel = 0; wheel < 4; wheel++) {
+		for (size_t wheel = 0; wheel < 4; wheel++)
+		{
 
 			// PID Terms
 			Tp = kp * (wheelVel[wheel] - gv[6 + wheel]);
@@ -347,7 +417,8 @@ int main(int argc, char* argv[]) {
 			controlForce[wheel] = max(min(controlForce[wheel], maxwheelTorque), -maxwheelTorque);
 
 			// For Plots
-			if (PlotMotors && time < dur/RSStep) {
+			if (PlotMotors && time < dur / RSStep)
+			{
 				t[time] = time;
 				frontLeftAngDesired[wheel][time] = wheelVel[wheel];
 				frontLeftAngActual[wheel][time] = gv[6 + wheel];
@@ -358,51 +429,39 @@ int main(int argc, char* argv[]) {
 
 		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, controlForce[0], controlForce[1], controlForce[2], controlForce[3]});
 
-		if (buttonY) {  // Only runs on a true "buttonY" from rising edge detection
-			if (!active) {
+		if (buttonY)
+		{ // Only runs on a true "buttonY" from rising edge detection
+			if (!active)
+			{
 				// Activation code
 				cout << "Turning on motors" << endl;
 				active = true;
-			} else {
+			}
+			else
+			{
 				// Deactivation code
 				cout << "Turning off motors" << endl;
 				active = false;
 			}
-			buttonY = false;  // Reset buttonY after toggling to await the next rising edge
+			buttonY = false; // Reset buttonY after toggling to await the next rising edge
 		}
 
 		// If fallen off edge send back to centre
-		if(fabs(gc[0])>35. || fabs(gc[1])>35. || buttonB) {
+		if (fabs(gc[0]) > 35. || fabs(gc[1]) > 35. || buttonB)
+		{
 			gc.segment<7>(0) << 0, 0, 1.6, 0.7071068, 0, 0, -0.7071068;
 			gv.setZero();
 			rover->setState(gc, gv);
 			buttonB = false;
 		}
 
-		if (time % 5 == 0) { // Display only every 'displayInterval' iterations
+		if (time % 5 == 0)
+		{ // Display only every 'displayInterval' iterations
 
+			
 			// cout << "Camera Display: " << k <<endl;
-
-			auto frontCamData = frontCam->getImageBuffer();
-			auto rearCamData = rearCam->getImageBuffer();
-
-			// Set the dimensions of the image (adjust as necessary for your camera settings)
-			int width = 640;   // Replace with your actual width
-			int height = 480;  // Replace with your actual height
-
-			// Process and display the first camera image
-			cv::Mat imageBGRAFront(height, width, CV_8UC4, frontCamData.data());
-			cv::Mat imageBGRFront;
-			cv::cvtColor(imageBGRAFront, imageBGRFront, cv::COLOR_BGRA2BGR);
-			cv::imshow("Front Camera Image", imageBGRFront);
-
-			// Process and display the second camera image
-			cv::Mat imageBGRARear(height, width, CV_8UC4, rearCamData.data());
-			cv::Mat imageBGRRear;
-			cv::cvtColor(imageBGRARear, imageBGRRear, cv::COLOR_BGRA2BGR);
-			cv::imshow("Rear Camera Image", imageBGRRear);
-
-			cv::waitKey(1);  // Minimal delay to refresh the display
+			frontCameraData = frontCam->getImageBuffer().data();
+			rearCameraData = rearCam->getImageBuffer().data();
 		}
 
 		time++;
@@ -411,11 +470,12 @@ int main(int argc, char* argv[]) {
 	server.killServer();
 
 	// Calculate and display the duration
-    auto endTime = chrono::high_resolution_clock::now();
-    chrono::duration<double> elapsed = endTime - startTime;
-    cout << "\nLoop duration: " << elapsed.count() << " seconds." << endl;
+	auto endTime = chrono::high_resolution_clock::now();
+	chrono::duration<double> elapsed = endTime - startTime;
+	cout << "\nLoop duration: " << elapsed.count() << " seconds." << endl;
 
-	if (PlotMotors) {
+	if (PlotMotors)
+	{
 		plt::figure_size(1366, 768);
 		plt::plot(t, frontLeftAngDesired[0], "r-");
 		plt::plot(t, frontLeftAngActual[0], "b-");
