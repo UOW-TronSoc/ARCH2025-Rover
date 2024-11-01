@@ -27,24 +27,30 @@
 using namespace std;
 namespace plt = matplotlibcpp;
 
-#define FlatMap false
+#define FlatMap true
 #define PlotMotors false
-#define RSStep 0.01
+#define RSStep 0.005
 
-// Variables to share between threads
-atomic<bool> running(true);
-atomic<float> inputAxisX(0.0f);
-atomic<float> inputAxisY(0.0f);
-atomic<float> inputAxisW(0.0f);
-atomic<float> inputAxisZ(0.0f);
-atomic<bool> buttonY(false);
-atomic<bool> wasButtonYPressed(false);
-atomic<bool> buttonB(false);
-atomic<bool> wasButtonBPressed(false);
+/// Variables to share between threads
 
-// Atomic pointers to the raw image buffers from the cameras
-std::atomic<char *> frontCameraData(nullptr);
-std::atomic<char *> rearCameraData(nullptr);
+// Data from Base Station
+atomic<bool> running(true);					// Toggles wheel activity
+atomic<float> inputAxisX(0.0f);				// Left Joystick X axis
+atomic<float> inputAxisY(0.0f);				// Left Joystick Y axis
+atomic<float> inputAxisW(0.0f);				// Right Joystick X axis
+atomic<float> inputAxisZ(0.0f);				// Right Joystick Y axis
+atomic<bool> buttonY(false);				// Trigger for toggling running
+atomic<bool> buttonB(false);				// Trigger for reseting rover position and velocity to lander
+
+// Data tp base station
+atomic<char *> frontCameraData(nullptr);	// Front Camera Data
+atomic<char *> rearCameraData(nullptr);		// Rear Camera Data
+atomic<double> motorCurrentDraw[4];			// Current Draw Data
+
+// Other shared variables
+atomic<bool> wasButtonYPressed(false);		// Ensures button press only occurs on button down (wont be needed from nase station)
+atomic<bool> wasButtonBPressed(false);		// Ensures button press only occurs on button down (wont be needed from nase station)
+
 
 // Dimensions of the images (make sure these match the camera settings)
 const int width = 640;	// Replace with your actual width
@@ -56,7 +62,7 @@ void signalHandler(int signum)
 	running = false; // Stop the loops
 }
 
-// Function for reading from controller in new thread
+// Function for reading from controller in new thread (Replace with function to interpret data/commands from abse station)
 void readController()
 {
 	// Controller connection status
@@ -223,7 +229,7 @@ void readController()
 	close(fd);
 }
 
-// Function to run in a separate thread to process and display images
+// Function to run in a separate thread to process and display images (Replace with function to send image to base station)
 void displayImages()
 {
 	while (running)
@@ -341,14 +347,26 @@ int main(int argc, char *argv[])
 
 	// Motor Parameter
 	int motorV = 24;
+	double motorI = 10;
 	int motorKv = 100;
-	double motorTorque = 1;
+	double motorKt = (15*sqrt(3)/M_PI)/ motorKv;
+	
+	// Speed Controller Efficiency
 	double ESCeff = 0.78;
-	double maxWheelRPM = motorV * motorKv * ESCeff;
+
+	// Gear
 	int reduction = 50;
+	double gearboxEff = 0.9;
+	double maxGearboxTorque = 20;
+
+	double maxWheelRPM = motorV * motorKv * ESCeff;
 	double maxWheelRads = maxWheelRPM * M_PI / 30 / 50;
-	double maxwheelTorque = motorTorque * reduction;
-	double maxWheelTorqueDelta = 5;
+
+	double maxMotorTorque = motorKt * motorI;
+	cout << maxMotorTorque <<endl;
+	// maxMotorTorque = 1;
+	double maxWheelTorque = maxMotorTorque * reduction;
+	
 
 	// Control Parameters
 	double wheelVel[4] = {0.0, 0.0, 0.0, 0.0};
@@ -357,6 +375,7 @@ int main(int argc, char *argv[])
 	double kd = 0.00;
 	double Tp;
 	double Td;
+	double maxWheelTorqueDelta = 5;
 
 	// Plotting duration
 	int dur = 20;
@@ -414,7 +433,7 @@ int main(int argc, char *argv[])
 			// Smoothed Torques
 			controlForce[wheel] = max(min(controlForce[wheel], gf[6 + wheel] + maxWheelTorqueDelta), gf[6 + wheel] - maxWheelTorqueDelta);
 			// Capped Torques
-			controlForce[wheel] = max(min(controlForce[wheel], maxwheelTorque), -maxwheelTorque);
+			controlForce[wheel] = max(min(controlForce[wheel], max(maxWheelTorque, maxGearboxTorque)), -max(maxWheelTorque, maxGearboxTorque));
 
 			// For Plots
 			if (PlotMotors && time < dur / RSStep)
@@ -425,9 +444,23 @@ int main(int argc, char *argv[])
 				frontLeftTorqueDesired[wheel][time] = controlForce[wheel];
 				frontLeftTorqueActual[wheel][time] = gf[6 + wheel];
 			}
+
+			motorCurrentDraw[wheel] = abs(controlForce[wheel]) / (reduction * gearboxEff * motorKt);
 		}
 
 		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, controlForce[0], controlForce[1], controlForce[2], controlForce[3]});
+
+		if (time % 20 == 0) {
+			// Print in the specified format
+			cout << fixed << setprecision(2); // Set precision to 2 decimal places
+			cout << "Front Left Current Draw: " << motorCurrentDraw[0] << " A, "
+					<< "Front Right Current Draw: " << motorCurrentDraw[1] << " A, "
+					<< "Rear Left Current Draw: " << motorCurrentDraw[2] << " A, "
+					<< "Rear Right Current Draw: " << motorCurrentDraw[3] << " A, "
+					<< "Total Current Draw: " << motorCurrentDraw[0] + motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[3] << " A   " <<endl;
+			
+		}
+
 
 		if (buttonY)
 		{ // Only runs on a true "buttonY" from rising edge detection
