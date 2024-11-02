@@ -46,12 +46,21 @@ atomic<bool> buttonB(false);	// Trigger for reseting rover position and velocity
 atomic<char *> frontCameraData(nullptr); // Front Camera Data
 atomic<char *> rearCameraData(nullptr);	 // Rear Camera Data
 atomic<char *> belowCameraData(nullptr); // Below Camera Data
-atomic<char *> aboveCameraData(nullptr);	 // Above Camera Data
+atomic<char *> aboveCameraData(nullptr); // Above Camera Data
 atomic<double> motorCurrentDraw[4];		 // Current Draw Data
+atomic<double> imuLinearAcceleration_data[3];
+atomic<double> imuAngularVelocity_data[3];
+atomic<double> imuOrientation[4]; // Quaternion w, x, y, z
 
 // Other shared variables
 atomic<bool> wasButtonYPressed(false); // Ensures button press only occurs on button down (wont be needed from nase station)
 atomic<bool> wasButtonBPressed(false); // Ensures button press only occurs on button down (wont be needed from nase station)
+atomic<bool> buttonA(false);	// :)
+atomic<bool> buttonX(false);	// :)
+atomic<bool> wasButtonAPressed(false); // :)
+atomic<bool> wasButtonXPressed(false); // :)
+
+int speedFactor = 1;
 
 // Dimensions of the images (make sure these match the camera settings)
 const int width = 640;	// Replace with your actual width
@@ -169,14 +178,36 @@ void readController()
 				running = false;
 				break;
 			case 304: // Button A
-				// cout << "Button A: " << ev.value << " ("
-				//           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-				// buttonA = ev.value;
+				static bool wasButtonAPressed = false; // Track the previous state of Button Y
+
+				if (ev.value == 1 && !wasButtonAPressed)
+				{
+					// Button Y is pressed and was not pressed before (rising edge)
+					buttonA = true;			  // Signal the button press
+					wasButtonAPressed = true; // Update the state to pressed
+				}
+				else if (ev.value == 0)
+				{
+					// Button Y is released, reset the press state
+					wasButtonAPressed = false;
+					buttonA = false; // Clear buttonB to prevent continuous activation
+				}
 				break;
 			case 307: // Button X
-				// cout << "Button X: " << ev.value << " ("
-				//           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-				// buttonX = ev.value;
+				static bool wasButtonXPressed = false; // Track the previous state of Button Y
+
+				if (ev.value == 1 && !wasButtonXPressed)
+				{
+					// Button Y is pressed and was not pressed before (rising edge)
+					buttonX = true;			  // Signal the button press
+					wasButtonXPressed = true; // Update the state to pressed
+				}
+				else if (ev.value == 0)
+				{
+					// Button Y is released, reset the press state
+					wasButtonXPressed = false;
+					buttonX = false; // Clear buttonB to prevent continuous activation
+				}
 				break;
 			case 305:								   // Button B
 				static bool wasButtonBPressed = false; // Track the previous state of Button Y
@@ -289,6 +320,31 @@ void displayImages()
 	}
 }
 
+// Function to update atomic arrays with IMU readings
+void updateIMUData(raisim::InertialMeasurementUnit *imu)
+{
+	// Get IMU readings
+	auto linear_acceleration = imu->getLinearAcceleration();
+	auto angular_velocity = imu->getAngularVelocity();
+	auto orientation = imu->getOrientation(); // Quaternion (w, x, y, z)
+
+	// Update linear acceleration
+	imuLinearAcceleration_data[0] = linear_acceleration[0];
+	imuLinearAcceleration_data[1] = linear_acceleration[1];
+	imuLinearAcceleration_data[2] = linear_acceleration[2];
+
+	// Update angular velocity
+	imuAngularVelocity_data[0] = angular_velocity[0];
+	imuAngularVelocity_data[1] = angular_velocity[1];
+	imuAngularVelocity_data[2] = angular_velocity[2];
+
+	// Update orientation quaternion
+	imuOrientation[0] = orientation[0]; // w
+	imuOrientation[1] = orientation[1]; // x
+	imuOrientation[2] = orientation[2]; // y
+	imuOrientation[3] = orientation[3]; // z
+}
+
 int main(int argc, char *argv[])
 {
 	auto binaryPath = raisim::Path::setFromArgv(argv[0]);
@@ -334,16 +390,16 @@ int main(int argc, char *argv[])
 	damping.tail(4).setConstant(1.);
 	rover->setJointDamping(damping);
 
-	// Virtual Cameras
-	auto frontCam = rover->getSensorSet("depth_camera_front_camera_parent")->getSensor<raisim::RGBCamera>("color");
+	// Virtual Sensors
+	auto frontCam = rover->getSensorSet("camera_front_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
-	auto rearCam = rover->getSensorSet("depth_camera_rear_camera_parent")->getSensor<raisim::RGBCamera>("color");
+	auto rearCam = rover->getSensorSet("camera_rear_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
-	auto aboveCam = rover->getSensorSet("depth_camera_above_camera_parent")->getSensor<raisim::RGBCamera>("color");
+	auto aboveCam = rover->getSensorSet("camera_above_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
-	auto belowCam = rover->getSensorSet("depth_camera_below_camera_parent")->getSensor<raisim::RGBCamera>("wide");
+	auto belowCam = rover->getSensorSet("camera_below_camera_parent")->getSensor<raisim::RGBCamera>("wide");
 	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
-	
+	auto imu = rover->getSensorSet("imu_camera_parent")->getSensor<raisim::InertialMeasurementUnit>("imu");
 
 	/// Launch raisim server
 	raisim::RaisimServer server(&world);
@@ -387,6 +443,7 @@ int main(int argc, char *argv[])
 	double Tp;
 	double Td;
 	double maxWheelTorqueDelta = 5;
+	double differentialTorque = 0;
 
 	// Plotting duration
 	int dur = 20;
@@ -418,10 +475,10 @@ int main(int argc, char *argv[])
 		// Set Motor Speeds
 		if (active)
 		{
-			wheelVel[1] = (inputAxisY / 2047) * maxWheelRads; 	// BL
-			wheelVel[2] = (inputAxisY / 2047) * maxWheelRads;	// BR
-			wheelVel[4] = (-inputAxisZ / 2047) * maxWheelRads;	// FR
-			wheelVel[5] = (-inputAxisZ / 2047) * maxWheelRads;	// BR
+			wheelVel[1] = speedFactor * (inputAxisY / 2047) * maxWheelRads;  // BL
+			wheelVel[2] = speedFactor * (inputAxisY / 2047) * maxWheelRads;  // BR
+			wheelVel[4] = speedFactor * (-inputAxisZ / 2047) * maxWheelRads; // FR
+			wheelVel[5] = speedFactor * (-inputAxisZ / 2047) * maxWheelRads; // BR
 		}
 		else
 		{
@@ -434,7 +491,8 @@ int main(int argc, char *argv[])
 		// Per Wheek
 		for (size_t wheel = 0; wheel < 6; wheel++)
 		{
-			if (wheel == 0 || wheel == 3) {
+			if (wheel == 0 || wheel == 3)
+			{
 				continue;
 			}
 			// PID Controller with velocity input and torque output
@@ -463,19 +521,22 @@ int main(int argc, char *argv[])
 			motorCurrentDraw[wheel] = abs(gf[6 + wheel]) / (reduction * gearboxEff * motorKt);
 		}
 
+		// Fake differential control
+		differentialTorque = 10.0 * (gc[7] - gc[10]) + 1.0 * (gv[6] - gv[9]);
+
 		// Send Forces to Rover simulation (For Real system replace with function to send values to motors via can)
-		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, 0, controlForce[1], controlForce[2], 0, controlForce[4], controlForce[5]});
+		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, -differentialTorque, controlForce[1], controlForce[2], differentialTorque, controlForce[4], controlForce[5]});
 
 		// Display Currents (Only needed until display made)
-		if ((time % (1000 / cameraFPS)) < RSStep)
-		{
-			cout << fixed << setprecision(2);
-			cout << "Front Left Current Draw: " << motorCurrentDraw[1] << " A, "
-				 << "Front Right Current Draw: " << motorCurrentDraw[2] << " A, "
-				 << "Rear Left Current Draw: " << motorCurrentDraw[4] << " A, "
-				 << "Rear Right Current Draw: " << motorCurrentDraw[5] << " A, "
-				 << "Total Current Draw: " << motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5] << " A   " << endl;
-		}
+		// if ((time % (1000 / cameraFPS)) < RSStep)
+		// {
+		// 	cout << fixed << setprecision(2);
+		// 	cout << "Front Left Current Draw: " << motorCurrentDraw[1] << " A, "
+		// 		 << "Front Right Current Draw: " << motorCurrentDraw[2] << " A, "
+		// 		 << "Rear Left Current Draw: " << motorCurrentDraw[4] << " A, "
+		// 		 << "Rear Right Current Draw: " << motorCurrentDraw[5] << " A, "
+		// 		 << "Total Current Draw: " << motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5] << " A   " << endl;
+		// }
 
 		// Toggle rover activation
 		if (buttonY)
@@ -495,6 +556,25 @@ int main(int argc, char *argv[])
 			buttonY = false; // Reset buttonY after toggling to await the next rising edge
 		}
 
+		if (buttonA)
+		{
+			speedFactor*=-1;
+			buttonA = false;
+		}
+
+		if (buttonX)
+		{
+			if (abs(speedFactor) == 2) {
+				speedFactor*=5;
+			} else if (abs(speedFactor) == 10) {
+				speedFactor/=10;
+			} else {
+				speedFactor*=2;
+			}
+			buttonX = false; 
+			
+		}
+
 		// If fallen off edge or triggered send back to centre
 		if (fabs(gc[0]) > 35. || fabs(gc[1]) > 35. || buttonB)
 		{
@@ -504,7 +584,10 @@ int main(int argc, char *argv[])
 			buttonB = false;
 		}
 
-		// Display only every couple iterations (For Real system replace with function to get camera data)
+		// Get IMU Data (Replace with function to read imu from sensor board through internal comms, talk to electrical)
+		updateIMUData(imu);
+
+		// Get Display only every couple iterations (For Real system replace with function to get camera data)
 		if ((time % (1000 / cameraFPS)) < RSStep)
 		{
 			frontCameraData = frontCam->getImageBuffer().data();
