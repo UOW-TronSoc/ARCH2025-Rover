@@ -334,8 +334,6 @@ int main(int argc, char *argv[])
 	damping.tail(4).setConstant(1.);
 	rover->setJointDamping(damping);
 
-	cout<< rover->getDOF() <<endl;
-
 	// Virtual Cameras
 	auto frontCam = rover->getSensorSet("depth_camera_front_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
@@ -382,7 +380,7 @@ int main(int argc, char *argv[])
 
 	// Control Parameters
 	bool active = false;
-	double wheelVel[4] = {0.0, 0.0, 0.0, 0.0};
+	double wheelVel[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 	double controlForce[4] = {0.0, 0.0, 0.0, 0.0};
 	double kp = 10.0;
 	double kd = 0.00;
@@ -420,22 +418,25 @@ int main(int argc, char *argv[])
 		// Set Motor Speeds
 		if (active)
 		{
-			wheelVel[0] = (inputAxisY / 2047) * maxWheelRads; 	// BL
-			wheelVel[1] = (inputAxisY / 2047) * maxWheelRads;	// BR
-			wheelVel[2] = (-inputAxisZ / 2047) * maxWheelRads;	// FR
-			wheelVel[3] = (-inputAxisZ / 2047) * maxWheelRads;	// BR
+			wheelVel[1] = (inputAxisY / 2047) * maxWheelRads; 	// BL
+			wheelVel[2] = (inputAxisY / 2047) * maxWheelRads;	// BR
+			wheelVel[4] = (-inputAxisZ / 2047) * maxWheelRads;	// FR
+			wheelVel[5] = (-inputAxisZ / 2047) * maxWheelRads;	// BR
 		}
 		else
 		{
-			wheelVel[0] = 0.0;
 			wheelVel[1] = 0.0;
 			wheelVel[2] = 0.0;
-			wheelVel[3] = 0.0;
+			wheelVel[4] = 0.0;
+			wheelVel[5] = 0.0;
 		}
 
 		// Per Wheek
-		for (size_t wheel = 0; wheel < 4; wheel++)
+		for (size_t wheel = 0; wheel < 6; wheel++)
 		{
+			if (wheel == 0 || wheel == 3) {
+				continue;
+			}
 			// PID Controller with velocity input and torque output
 			// PID Terms
 			Tp = kp * (wheelVel[wheel] - gv[6 + wheel]);
@@ -463,17 +464,17 @@ int main(int argc, char *argv[])
 		}
 
 		// Send Forces to Rover simulation (For Real system replace with function to send values to motors via can)
-		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, controlForce[0], controlForce[1], controlForce[2], controlForce[3]});
+		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, 0, controlForce[1], controlForce[2], 0, controlForce[4], controlForce[5]});
 
 		// Display Currents (Only needed until display made)
 		if ((time % (1000 / cameraFPS)) < RSStep)
 		{
 			cout << fixed << setprecision(2);
-			cout << "Front Left Current Draw: " << motorCurrentDraw[0] << " A, "
-				 << "Front Right Current Draw: " << motorCurrentDraw[1] << " A, "
-				 << "Rear Left Current Draw: " << motorCurrentDraw[2] << " A, "
-				 << "Rear Right Current Draw: " << motorCurrentDraw[3] << " A, "
-				 << "Total Current Draw: " << motorCurrentDraw[0] + motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[3] << " A   " << endl;
+			cout << "Front Left Current Draw: " << motorCurrentDraw[1] << " A, "
+				 << "Front Right Current Draw: " << motorCurrentDraw[2] << " A, "
+				 << "Rear Left Current Draw: " << motorCurrentDraw[4] << " A, "
+				 << "Rear Right Current Draw: " << motorCurrentDraw[5] << " A, "
+				 << "Total Current Draw: " << motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5] << " A   " << endl;
 		}
 
 		// Toggle rover activation
