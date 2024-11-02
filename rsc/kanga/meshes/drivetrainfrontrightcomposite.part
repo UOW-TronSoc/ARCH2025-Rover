@@ -1,0 +1,13 @@
+{
+    "configuration": "default",
+    "documentId": "309dad1fcf96402f6f71fc39",
+    "documentMicroversion": "7a9977c54a0e16a669b3b612",
+    "elementId": "edb732c7d7c201d9d32b5d05",
+    "fullConfiguration": "default",
+    "id": "MN/p8EPrcO37NBy1Z",
+    "isStandardContent": false,
+    "name": "DriveTrainFrontRightComposite <1>",
+    "partId": "JGD",
+    "suppressed": false,
+    "type": "Part"
+}

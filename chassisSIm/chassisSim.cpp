@@ -45,6 +45,8 @@ atomic<bool> buttonB(false);	// Trigger for reseting rover position and velocity
 // Data tp base station
 atomic<char *> frontCameraData(nullptr); // Front Camera Data
 atomic<char *> rearCameraData(nullptr);	 // Rear Camera Data
+atomic<char *> belowCameraData(nullptr); // Below Camera Data
+atomic<char *> aboveCameraData(nullptr);	 // Above Camera Data
 atomic<double> motorCurrentDraw[4];		 // Current Draw Data
 
 // Other shared variables
@@ -54,7 +56,7 @@ atomic<bool> wasButtonBPressed(false); // Ensures button press only occurs on bu
 // Dimensions of the images (make sure these match the camera settings)
 const int width = 640;	// Replace with your actual width
 const int height = 480; // Replace with your actual height
-const int cameraFPS = 50;
+const int cameraFPS = 30;
 
 // Interrupt handler
 void signalHandler(int signum)
@@ -259,7 +261,31 @@ void displayImages()
 			rearCameraData.store(nullptr); // Reset the pointer after processing
 		}
 
-		cv::waitKey(1); // Minimal delay to allow OpenCV to process display events
+		// Check if we have new data for Camera 3
+		if (aboveCameraData.load() != nullptr)
+		{
+			// Create a cv::Mat from the raw data and convert BGRA to BGR
+			cv::Mat imageBGRAabove(height, width, CV_8UC4, aboveCameraData.load());
+			cv::Mat imageBGRabove;
+			cv::cvtColor(imageBGRAabove, imageBGRabove, cv::COLOR_BGRA2BGR);
+			cv::imshow("Above Camera Image", imageBGRabove);
+
+			aboveCameraData.store(nullptr); // Reset the pointer after processing
+		}
+
+		// Check if we have new data for Camera 4 (wide)
+		if (belowCameraData.load() != nullptr)
+		{
+			// Create a cv::Mat from the raw data and convert BGRA to BGR
+			cv::Mat imageBGRAbelow(height, width, CV_8UC4, belowCameraData.load());
+			cv::Mat imageBGRbelow;
+			cv::cvtColor(imageBGRAbelow, imageBGRbelow, cv::COLOR_BGRA2BGR);
+			cv::imshow("Below Camera Image", imageBGRbelow);
+
+			belowCameraData.store(nullptr); // Reset the pointer after processing
+		}
+
+		cv::waitKey(10); // Minimal delay to allow OpenCV to process display events
 	}
 }
 
@@ -295,23 +321,31 @@ int main(int argc, char *argv[])
 	lander->setBodyType(raisim::BodyType::STATIC);
 
 	// Add Rover
-	auto rover = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/huskyDemo/urdf/husky.urdf");
+	// auto rover = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/huskyDemo/urdf/husky.urdf");
+	auto rover = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/kanga/urdf/kangaSensors.urdf");
 	rover->setName("smb");
 	Eigen::VectorXd gc(rover->getGeneralizedCoordinateDim()), gv(rover->getDOF()), ga(rover->getDOF()), gf(rover->getDOF()), damping(rover->getDOF());
 	gc.setZero();
 	gv.setZero();
-	gc.segment<7>(0) << 0, 0, 1.6, 0.7071068, 0, 0, -0.7071068;
+	gc.segment<7>(0) << 0, 0, 2.3, 0, 0, 0, 1;
 	rover->setGeneralizedCoordinate(gc);
 	rover->setGeneralizedVelocity(gv);
 	damping.setConstant(0);
 	damping.tail(4).setConstant(1.);
 	rover->setJointDamping(damping);
 
+	cout<< rover->getDOF() <<endl;
+
 	// Virtual Cameras
 	auto frontCam = rover->getSensorSet("depth_camera_front_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
 	auto rearCam = rover->getSensorSet("depth_camera_rear_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
+	auto aboveCam = rover->getSensorSet("depth_camera_above_camera_parent")->getSensor<raisim::RGBCamera>("color");
+	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
+	auto belowCam = rover->getSensorSet("depth_camera_below_camera_parent")->getSensor<raisim::RGBCamera>("wide");
+	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
+	
 
 	/// Launch raisim server
 	raisim::RaisimServer server(&world);
@@ -386,10 +420,10 @@ int main(int argc, char *argv[])
 		// Set Motor Speeds
 		if (active)
 		{
-			wheelVel[0] = (inputAxisZ / 2047) * maxWheelRads;
-			wheelVel[1] = (inputAxisY / 2047) * maxWheelRads;
-			wheelVel[2] = (inputAxisZ / 2047) * maxWheelRads;
-			wheelVel[3] = (inputAxisY / 2047) * maxWheelRads;
+			wheelVel[0] = (inputAxisY / 2047) * maxWheelRads; 	// BL
+			wheelVel[1] = (inputAxisY / 2047) * maxWheelRads;	// BR
+			wheelVel[2] = (-inputAxisZ / 2047) * maxWheelRads;	// FR
+			wheelVel[3] = (-inputAxisZ / 2047) * maxWheelRads;	// BR
 		}
 		else
 		{
@@ -463,7 +497,7 @@ int main(int argc, char *argv[])
 		// If fallen off edge or triggered send back to centre
 		if (fabs(gc[0]) > 35. || fabs(gc[1]) > 35. || buttonB)
 		{
-			gc.segment<7>(0) << 0, 0, 1.6, 0.7071068, 0, 0, -0.7071068;
+			gc.segment<7>(0) << 0, 0, 2.3, 0, 0, 0, 1;
 			gv.setZero();
 			rover->setState(gc, gv);
 			buttonB = false;
@@ -474,6 +508,8 @@ int main(int argc, char *argv[])
 		{
 			frontCameraData = frontCam->getImageBuffer().data();
 			rearCameraData = rearCam->getImageBuffer().data();
+			aboveCameraData = aboveCam->getImageBuffer().data();
+			belowCameraData = belowCam->getImageBuffer().data();
 		}
 
 		// Increment Time
