@@ -488,7 +488,7 @@ int main(int argc, char *argv[])
 			wheelVel[5] = 0.0;
 		}
 
-		// Per Wheek
+		// Per Joint
 		for (size_t wheel = 0; wheel < 6; wheel++)
 		{
 			if (wheel == 0 || wheel == 3)
@@ -521,8 +521,8 @@ int main(int argc, char *argv[])
 			motorCurrentDraw[wheel] = abs(gf[6 + wheel]) / (reduction * gearboxEff * motorKt);
 		}
 
-		// Fake differential control
-		differentialTorque = 10.0 * (gc[7] - gc[10]) + 1.0 * (gv[6] - gv[9]);
+		// Fake differential control (Not required on real model)
+		differentialTorque = 60.0 * (gc[7] - gc[10]) + 2.0 * (gv[6] - gv[9]);
 
 		// Send Forces to Rover simulation (For Real system replace with function to send values to motors via can)
 		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, -differentialTorque, controlForce[1], controlForce[2], differentialTorque, controlForce[4], controlForce[5]});

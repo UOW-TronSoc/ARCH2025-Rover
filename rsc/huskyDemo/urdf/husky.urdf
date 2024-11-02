@@ -148,6 +148,13 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
     <link name="depth_camera_front_color_optical_frame"/>
 
 
+
+
+
+
+
+
+
     <!-- IMU Link is the standard mounting position for the UM6 IMU.-->
   <!-- Can be modified with environment variables in /etc/ros/setup.bash -->
   <joint name="depth_camera_rear_camera_joint" type="fixed">

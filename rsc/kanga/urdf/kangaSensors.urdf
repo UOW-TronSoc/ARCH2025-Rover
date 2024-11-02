@@ -76,21 +76,21 @@
         </inertial>
     </link>
 
-    <joint name="suspension_left" type="fixed">
+    <joint name="suspension_left" type="revolute">
         <origin xyz="0.201911706720504458 0.092132180163690832742 -0.16260437190083004699" rpy="1.57079632679489678 -0 1.570796326794896558" />
         <parent link="body" />
         <child link="suspensionleft" />
         <axis xyz="0 0 1"/>
-        <limit effort="100" velocity="20" lower="-0.34906585039886589561" upper="0.34906585039886589561"/>
+        <limit effort="100" velocity="20" lower="-0.52359877559 " upper="0.52359877559 "/>
         <joint_properties friction="0.0"/>
     </joint>
 
-    <joint name="suspension_right" type="fixed">
+    <joint name="suspension_right" type="revolute">
         <origin xyz="-0.17408829327949054688 0.092132180163690846619 -0.16260437190083004699" rpy="-1.57079632679489678 -0 1.570796326794896558" />
         <parent link="body" />
         <child link="suspensionright" />
         <axis xyz="0 0 1"/>
-        <limit effort="100" velocity="20" lower="-0.34906585039886589561" upper="0.34906585039886589561"/>
+        <limit effort="100" velocity="20" lower="-0.52359877559 " upper="0.52359877559 "/>
         <joint_properties friction="0.0"/>
     </joint>
 
@@ -369,5 +369,331 @@
         <limit effort="100" velocity="20" />
         <joint_properties friction="0.0"/>
     </joint>
+
+    <link name="radio">
+        <visual>
+            <origin xyz="0 0 0" rpy="1.570796326794896558 1.570796326794896558 0" />
+            <geometry>
+                <mesh filename="meshes/radio.obj"/>
+            </geometry>
+            <material name="radio_material">
+                <color rgba="0.91764705882352937127 0.91764705882352937127 0.91764705882352937127 1.0"/>
+            </material>
+        </visual>
+        <!-- <collision>
+            <origin xyz="0 0 -0.041583953201770773589" rpy="1.570796326794896558 1.570796326794896558 0" />
+            <geometry>
+                <mesh filename="meshes/radio.obj"/>
+            </geometry>
+        </collision> -->
+        <inertial>
+            <origin xyz="0.00010263180776510683772 1.5858306326318977992e-19 -0.064223809060228773116" rpy="0 0 0"/>
+            <mass value="0.2000000000000000111" />
+            <inertia ixx="0.0003438073516519237361" ixy="6.2564772459245114566e-13" ixz="4.6188093671132065139e-07" iyy="0.00034138009881940292473" iyz="1.0028265943778459841e-29" izz="2.9206610625845624249e-05" />
+        </inertial>
+    </link>
+
+    <link name="antenna">
+        <visual>
+            <origin xyz="0 0 0" rpy="-3.141592653589793116 2.4651903288156618919e-32 -1.0263416486754031281e-48" />
+            <geometry>
+                <mesh filename="meshes/antenna.obj"/>
+            </geometry>
+            <material name="antenna_material">
+                <color rgba="0.91764705882352937127 0.91764705882352937127 0.91764705882352937127 1.0"/>
+            </material>
+        </visual>
+        <!-- <collision>
+            <origin xyz="0 0 0" rpy="-3.141592653589793116 2.4651903288156618919e-32 -1.0263416486754031281e-48" />
+            <geometry>
+                <mesh filename="meshes/antenna.obj"/>
+            </geometry>
+        </collision> -->
+        <inertial>
+            <origin xyz="-6.8251831286560820793e-20 -4.066818113829203339e-34 -0.45156705972675820204" rpy="0 0 0"/>
+            <mass value="0.2000000000000000111" />
+            <inertia ixx="0.013597825750077315379" ixy="-1.1398185877625000259e-50" ixz="-3.3427021854614069393e-34" iyy="0.013597825750077315379" iyz="1.3002083728230348252e-35" izz="1.6984341496596089196e-05" />
+        </inertial>
+    </link>
+
+    <joint name="antennaMount" type="fixed">
+        <origin xyz="0 0 -0.095" rpy="1.6028614105982569444e-17 -2.7755575615628923371e-16 1.570796326794896558" />
+        <parent link="radio" />
+        <child link="antenna" />
+        <axis xyz="0 0 1"/>
+        <limit effort="1" velocity="20" />
+        <joint_properties friction="0.0"/>
+    </joint>
+
+    <joint name="radioMount" type="fixed">
+        <origin xyz="-0.14 0.51 -0.22" rpy="3.141592653589793116 -0 1.570796326794896558" />
+        <parent link="body" />
+        <child link="radio" />
+        <axis xyz="0 0 1"/>
+        <limit effort="1" velocity="20" />
+        <joint_properties friction="0.0"/>
+    </joint>
+
+    <link name="composite_part_1">
+        <visual>
+            <origin xyz="-0.16073232144117299836 -0.059365964434146906159 -0.15181500660255600743" rpy="-1.570796326794896558 -1.570796326794896558 0" />
+            <geometry>
+                <mesh filename="meshes/composite_part_1.obj"/>
+            </geometry>
+            <material name="composite_part_1_material">
+                <color rgba="0.64705882352941179736 0.64705882352941179736 0.64705882352941179736 1.0"/>
+            </material>
+        </visual>
+        <!-- <collision>
+            <origin xyz="-0.16073232144117299836 -0.059365964434146906159 -0.15181500660255600743" rpy="-1.570796326794896558 -1.570796326794896558 0" />
+            <geometry>
+                <mesh filename="meshes/composite_part_1.obj"/>
+            </geometry>
+        </collision> -->
+        <inertial>
+            <origin xyz="-0.14843120397544637412 -0.03313609078625730231 -0.1327673590939615067" rpy="0 0 0"/>
+            <mass value="5" />
+            <inertia ixx="0.035826618092101997215" ixy="7.3930220078261677354e-05" ixz="-0.0012079392198400722494" iyy="0.047050418881050992681" iyz="0.000654396315728909936" izz="0.016056029795435775714" />
+        </inertial>
+    </link>
+
+    <joint name="batteryBox" type="fixed">
+        <origin xyz="-0.1426882932794905634 0.23373218016369090577 -0.14420437190083026935" rpy="1.57079632679489678 -0 -1.570796326794896558" />
+        <parent link="body" />
+        <child link="composite_part_1" />
+        <axis xyz="0 0 1"/>
+        <limit effort="1" velocity="20" />
+        <joint_properties friction="0.0"/>
+    </joint>
+
+    <joint name="camera_front_camera_joint" type="fixed">
+        <origin rpy="0 0.31415926535 -1.57079632679" xyz="-0.01371171  -0.06 -0.19"/>
+        <parent link="body"/>
+        <child link="camera_front_camera"/>
+    </joint>
+
+    <link name="camera_front_camera">
+        <visual>
+            <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://anymal_c_simple_description/meshes/depth_camera.dae" scale="1.0 1.0 1.0"/>
+            </geometry>
+        </visual>
+        <inertial>
+            <origin rpy="0 0 0" xyz="-0.021 -0.002 0.025"/>
+            <mass value="0.16043"/>
+            <inertia ixx="0.000637051" ixy="0.000484569" ixz="0.000424211" iyy="0.000929402" iyz="5.138e-06" izz="0.000484569"/>
+        </inertial>
+    </link>
+    <joint name="camera_front_camera_to_camera_parent" type="fixed">
+        <parent link="camera_front_camera"/>
+        <child link="camera_front_camera_parent"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0255 0.0175 0.0"/>
+    </joint>
+    <link name="camera_front_camera_parent" model="d435i" serial_number="dummy" sensor="cameraRGB.xml"/>
+    <joint name="camera_front_camera_parent_to_optical_frame" type="fixed">
+        <parent link="camera_front_camera_parent"/>
+        <child link="camera_front_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="camera_front_optical_frame"/>
+    <joint name="camera_front_camera_parent_to_color_frame" type="fixed">
+        <parent link="camera_front_camera_parent"/>
+        <child link="camera_front_color_frame"/>
+        <origin rpy="0 0 0" xyz="0 0.015 0"/>
+    </joint>
+    <link name="camera_front_color_frame"/>
+    <joint name="camera_front_color_frame_to_color_optical_frame" type="fixed">
+        <parent link="camera_front_color_frame"/>
+        <child link="camera_front_color_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="camera_front_color_optical_frame"/>
+
+
+    <joint name="camera_rear_camera_joint" type="fixed">
+        <origin rpy="0 0.31415926535 1.57079632679" xyz="-0.01371171  0.5 -0.19"/>
+        <parent link="body"/>
+        <child link="camera_rear_camera"/>
+    </joint>
+
+    <link name="camera_rear_camera">
+        <visual>
+            <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://anymal_c_simple_description/meshes/depth_camera.dae" scale="1.0 1.0 1.0"/>
+            </geometry>
+        </visual>
+        <inertial>
+            <origin rpy="0 0 0" xyz="-0.021 -0.002 0.025"/>
+            <mass value="0.16043"/>
+            <inertia ixx="0.000637051" ixy="0.000484569" ixz="0.000424211" iyy="0.000929402" iyz="5.138e-06" izz="0.000484569"/>
+        </inertial>
+    </link>
+    <joint name="camera_rear_camera_to_camera_parent" type="fixed">
+        <parent link="camera_rear_camera"/>
+        <child link="camera_rear_camera_parent"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0255 0.0175 0.0"/>
+    </joint>
+    <link name="camera_rear_camera_parent" model="d435i" serial_number="dummy" sensor="cameraRGB.xml"/>
+    <joint name="camera_rear_camera_parent_to_optical_frame" type="fixed">
+        <parent link="camera_rear_camera_parent"/>
+        <child link="camera_rear_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="camera_rear_optical_frame"/>
+    <joint name="camera_rear_camera_parent_to_color_frame" type="fixed">
+        <parent link="camera_rear_camera_parent"/>
+        <child link="camera_rear_color_frame"/>
+        <origin rpy="0 0 0" xyz="0 0.015 0"/>
+    </joint>
+    <link name="camera_rear_color_frame"/>
+    <joint name="camera_rear_color_frame_to_color_optical_frame" type="fixed">
+        <parent link="camera_rear_color_frame"/>
+        <child link="camera_rear_color_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="camera_rear_color_optical_frame"/>
+
+    <joint name="camera_below_camera_joint" type="fixed">
+        <origin rpy="1.57079632679 1.57079632679 1.57079632679" xyz="-0.01371171  0.18 -0.24"/>
+        <parent link="body"/>
+        <child link="camera_below_camera"/>
+    </joint>
+
+    <link name="camera_below_camera">
+        <visual>
+            <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://anymal_c_simple_description/meshes/depth_camera.dae" scale="1.0 1.0 1.0"/>
+            </geometry>
+        </visual>
+        <inertial>
+            <origin rpy="0 0 0" xyz="-0.021 -0.002 0.025"/>
+            <mass value="0.16043"/>
+            <inertia ixx="0.000637051" ixy="0.000484569" ixz="0.000424211" iyy="0.000929402" iyz="5.138e-06" izz="0.000484569"/>
+        </inertial>
+    </link>
+    <joint name="camera_below_camera_to_camera_parent" type="fixed">
+        <parent link="camera_below_camera"/>
+        <child link="camera_below_camera_parent"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0255 0.0175 0.0"/>
+    </joint>
+    <link name="camera_below_camera_parent" model="d435i" serial_number="dummy" sensor="cameraRGBWide.xml"/>
+    <joint name="camera_below_camera_parent_to_optical_frame" type="fixed">
+        <parent link="camera_below_camera_parent"/>
+        <child link="camera_below_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="camera_below_optical_frame"/>
+    <joint name="camera_below_camera_parent_to_color_frame" type="fixed">
+        <parent link="camera_below_camera_parent"/>
+        <child link="camera_below_color_frame"/>
+        <origin rpy="0 0 0" xyz="0 0.015 0"/>
+    </joint>
+    <link name="camera_below_color_frame"/>
+    <joint name="camera_below_color_frame_to_color_optical_frame" type="fixed">
+        <parent link="camera_below_color_frame"/>
+        <child link="camera_below_color_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="camera_below_color_optical_frame"/>
+
+    
+
+
+    <joint name="camera_above_camera_joint" type="fixed">
+        <origin rpy="0.0 0.75 -1.45" xyz="-0.135 0.52 0.81"/>
+        <parent link="body"/>
+        <child link="camera_above_camera"/>
+    </joint>
+
+    <link name="camera_above_camera">
+        <visual>
+            <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://anymal_c_simple_description/meshes/depth_camera.dae" scale="1.0 1.0 1.0"/>
+            </geometry>
+        </visual>
+        <inertial>
+            <origin rpy="0 0 0" xyz="-0.021 -0.002 0.025"/>
+            <mass value="0.16043"/>
+            <inertia ixx="0.000637051" ixy="0.000484569" ixz="0.000424211" iyy="0.000929402" iyz="5.138e-06" izz="0.000484569"/>
+        </inertial>
+    </link>
+    <joint name="camera_above_camera_to_camera_parent" type="fixed">
+        <parent link="camera_above_camera"/>
+        <child link="camera_above_camera_parent"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0255 0.0175 0.0"/>
+    </joint>
+    <link name="camera_above_camera_parent" model="d435i" serial_number="dummy" sensor="cameraRGB.xml"/>
+    <joint name="camera_above_camera_parent_to_optical_frame" type="fixed">
+        <parent link="camera_above_camera_parent"/>
+        <child link="camera_above_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="camera_above_optical_frame"/>
+    <joint name="camera_above_camera_parent_to_color_frame" type="fixed">
+        <parent link="camera_above_camera_parent"/>
+        <child link="camera_above_color_frame"/>
+        <origin rpy="0 0 0" xyz="0 0.015 0"/>
+    </joint>
+    <link name="camera_above_color_frame"/>
+    <joint name="camera_above_color_frame_to_color_optical_frame" type="fixed">
+        <parent link="camera_above_color_frame"/>
+        <child link="camera_above_color_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="camera_above_color_optical_frame"/>
+
+    
+
+
+
+
+    <joint name="imu_camera_joint" type="fixed">
+        <origin rpy="0.0 0.0 1.57079632679" xyz="-0.01371171  0.18 -0.18"/>
+        <parent link="body"/>
+        <child link="imu_camera"/>
+    </joint>
+
+    <link name="imu_camera">
+        <visual>
+            <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+            <geometry>
+                <mesh filename="package://anymal_c_simple_description/meshes/depth_camera.dae" scale="1.0 1.0 1.0"/>
+            </geometry>
+        </visual>
+        <inertial>
+            <origin rpy="0 0 0" xyz="-0.021 -0.002 0.025"/>
+            <mass value="0.16043"/>
+            <inertia ixx="0.000637051" ixy="0.000484569" ixz="0.000424211" iyy="0.000929402" iyz="5.138e-06" izz="0.000484569"/>
+        </inertial>
+    </link>
+    <joint name="imu_camera_to_camera_parent" type="fixed">
+        <parent link="imu_camera"/>
+        <child link="imu_camera_parent"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0255 0.0175 0.0"/>
+    </joint>
+    <link name="imu_camera_parent" model="d435i" serial_number="dummy" sensor="imu.xml"/>
+    <joint name="imu_camera_parent_to_optical_frame" type="fixed">
+        <parent link="imu_camera_parent"/>
+        <child link="imu_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="imu_optical_frame"/>
+    <joint name="imu_camera_parent_to_color_frame" type="fixed">
+        <parent link="imu_camera_parent"/>
+        <child link="imu_color_frame"/>
+        <origin rpy="0 0 0" xyz="0 0.015 0"/>
+    </joint>
+    <link name="imu_color_frame"/>
+    <joint name="imu_color_frame_to_color_optical_frame" type="fixed">
+        <parent link="imu_color_frame"/>
+        <child link="imu_color_optical_frame"/>
+        <origin rpy="-1.57079632679 0.0 -1.57079632679" xyz="0.0 0.0 0.0"/>
+    </joint>
+    <link name="imu_color_optical_frame"/>
+
 
 </robot>
