@@ -40,7 +40,7 @@ atomic<float> inputAxisY(0.0f); // Left Joystick Y axis
 atomic<float> inputAxisW(0.0f); // Right Joystick X axis
 atomic<float> inputAxisZ(0.0f); // Right Joystick Y axis
 atomic<bool> buttonY(false);	// Trigger for toggling running
-atomic<bool> buttonB(false);	// Trigger for reseting rover position and velocity to lander
+atomic<bool> buttonB(false);	// Trigger for reseting kanga position and velocity to lander
 
 // Data t0 base station
 atomic<char *> frontCameraData(nullptr); // Front Camera Data
@@ -52,7 +52,7 @@ atomic<double> imuLinearAcceleration_data[3];
 atomic<double> imuAngularVelocity_data[3];
 atomic<double> imuOrientation[4]; // Quaternion w, x, y, z
 atomic<double> batteryVoltage[4];
-atomic<double> batteryCharge[4];
+atomic<double> batteryEnergy[4];
 
 // Other shared variables
 atomic<bool> wasButtonYPressed(false); // Ensures button press only occurs on button down (wont be needed from nase station)
@@ -348,9 +348,11 @@ void updateIMUData(raisim::InertialMeasurementUnit *imu)
 
 int main(int argc, char *argv[])
 {
+	// Setup Raisim
 	auto binaryPath = raisim::Path::setFromArgv(argv[0]);
 	raisim::RaiSimMsg::setFatalCallback([]()
 										{ throw; });
+	
 	// Setup World
 	raisim::World world;
 	world.setTimeStep(RSStep);
@@ -377,42 +379,41 @@ int main(int argc, char *argv[])
 	lander->setPosition(raisim::Vec<3>{0, 0, 1.5});
 	lander->setBodyType(raisim::BodyType::STATIC);
 
-	// Add Rover
-	// auto rover = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/huskyDemo/urdf/husky.urdf");
-	auto rover = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/kanga/urdf/kangaSensors.urdf");
-	rover->setName("smb");
-	Eigen::VectorXd gc(rover->getGeneralizedCoordinateDim()), gv(rover->getDOF()), ga(rover->getDOF()), gf(rover->getDOF()), damping(rover->getDOF());
+	// Add Kanga
+	auto kanga = world.addArticulatedSystem(binaryPath.getDirectory() + "/rsc/kanga/urdf/kangaSensors.urdf");
+	kanga->setName("Kanga");
+	Eigen::VectorXd gc(kanga->getGeneralizedCoordinateDim()), gv(kanga->getDOF()), ga(kanga->getDOF()), gf(kanga->getDOF()), damping(kanga->getDOF());
 	gc.setZero();
 	gv.setZero();
 	gc.segment<7>(0) << 0, 0, 2.3, 0, 0, 0, 1;
-	rover->setGeneralizedCoordinate(gc);
-	rover->setGeneralizedVelocity(gv);
+	kanga->setGeneralizedCoordinate(gc);
+	kanga->setGeneralizedVelocity(gv);
 	damping.setConstant(0);
 	damping.tail(4).setConstant(1.);
-	rover->setJointDamping(damping);
+	kanga->setJointDamping(damping);
 
 	// Virtual Sensors
-	auto frontCam = rover->getSensorSet("camera_front_camera_parent")->getSensor<raisim::RGBCamera>("color");
+	auto frontCam = kanga->getSensorSet("camera_front_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
-	auto rearCam = rover->getSensorSet("camera_rear_camera_parent")->getSensor<raisim::RGBCamera>("color");
+	auto rearCam = kanga->getSensorSet("camera_rear_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
-	auto aboveCam = rover->getSensorSet("camera_above_camera_parent")->getSensor<raisim::RGBCamera>("color");
+	auto aboveCam = kanga->getSensorSet("camera_above_camera_parent")->getSensor<raisim::RGBCamera>("color");
 	frontCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
-	auto belowCam = rover->getSensorSet("camera_below_camera_parent")->getSensor<raisim::RGBCamera>("wide");
+	auto belowCam = kanga->getSensorSet("camera_below_camera_parent")->getSensor<raisim::RGBCamera>("wide");
 	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
-	auto imu = rover->getSensorSet("imu_camera_parent")->getSensor<raisim::InertialMeasurementUnit>("imu");
+	auto imu = kanga->getSensorSet("imu_camera_parent")->getSensor<raisim::InertialMeasurementUnit>("imu");
 
 	/// System Variables
 	// Power Params
 	double batteryVoltageMaX = 25.2;
 	double batteryVoltageMin = 18;
 	double buckConverterOutput = 24;
-	double batteryAh = 16;
+	double batteryAh = 18;
 	double batteryWh = batteryAh * batteryVoltageMaX;
 	double remainingBatteryCapacityWh = batteryWh;
 	double currentBatteryVoltage = batteryVoltageMaX;
-	double computingPower = 0;
-	double motorPower = 0;
+	double computingPower;
+	double motorPower;
 	double nvidiaPowerConsumption = 10;
 
 	// Drivetrain Parameter
@@ -431,14 +432,14 @@ int main(int argc, char *argv[])
 
 	// Control Parameters
 	bool active = false;
-	double wheelVel[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-	double controlForce[4] = {0.0, 0.0, 0.0, 0.0};
+	double wheelVel[6];
+	double controlForce[4];
 	double kp = 10.0;
 	double kd = 0.00;
 	double Tp;
 	double Td;
 	double maxWheelTorqueDelta = 5;
-	double differentialTorque = 0;
+	double differentialTorque;
 
 	/// Launch raisim server
 	raisim::RaisimServer server(&world);
@@ -456,7 +457,7 @@ int main(int argc, char *argv[])
 	while (!server.isConnected())
 		;
 	cout << "Server Connected" << endl;
-	server.focusOn(rover);
+	server.focusOn(kanga);
 
 	// Plotting duration
 	int dur = 20;
@@ -479,11 +480,11 @@ int main(int argc, char *argv[])
 		RS_TIMED_LOOP(int(world.getTimeStep() * 1e6))
 		server.integrateWorldThreadSafe();
 
-		// Get rover State (In real rover, replace with functions that get the current data from sensors)
-		gc = rover->getGeneralizedCoordinate().e();
-		gv = rover->getGeneralizedVelocity().e();
-		ga = rover->getGeneralizedAcceleration().e();
-		gf = rover->getGeneralizedForce().e();
+		// Get kanga State (In real kanga, replace with functions that get the current data from sensors)
+		gc = kanga->getGeneralizedCoordinate().e();
+		gv = kanga->getGeneralizedVelocity().e();
+		ga = kanga->getGeneralizedAcceleration().e();
+		gf = kanga->getGeneralizedForce().e();
 
 		// Calculate Battery power loss (Will be handled in microcontrollers for main system so replace with read from internal comms, talk to electrical)
 		currentBatteryVoltage = 113.91062 * pow(-(1 - remainingBatteryCapacityWh / batteryWh) + 0.48318, 5) + 22.2;
@@ -543,8 +544,8 @@ int main(int argc, char *argv[])
 		// Fake differential control (Not required on real model)
 		differentialTorque = 60.0 * (gc[7] - gc[10]) + 2.0 * (gv[6] - gv[9]);
 
-		// Send Forces to Rover simulation (For Real system replace with function to send values to motors via can)
-		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, -differentialTorque, controlForce[1], controlForce[2], differentialTorque, controlForce[4], controlForce[5]});
+		// Send Forces to Kanga simulation (For Real system replace with function to send values to motors via can)
+		kanga->setGeneralizedForce({0, 0, 0, 0, 0, 0, -differentialTorque, controlForce[1], controlForce[2], differentialTorque, controlForce[4], controlForce[5]});
 
 		// Calculate Battery power loss (Will be handled in microcontrollers for main system so replace with read from internal comms, talk to electrical)
 		motorPower = (motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5]) * max(currentBatteryVoltage, buckConverterOutput);
@@ -575,10 +576,10 @@ int main(int argc, char *argv[])
 				 << "Remaining Wh: " << remainingBatteryCapacityWh << " Wh    " << endl;
 		}
 
-		// Toggle rover activation
+		// Toggle kanga activation
 		if (buttonY)
 		{ // Only runs on a true "buttonY" from rising edge detection
-			// Enable Rover if battery isnt depleted and not currently active
+			// Enable Kanga if battery isnt depleted and not currently active
 			if (!active && currentBatteryVoltage > 18 && remainingBatteryCapacityWh > 0)
 			{
 				// Activation code
@@ -630,7 +631,7 @@ int main(int argc, char *argv[])
 		{
 			gc.segment<7>(0) << 0, 0, 2.3, 0, 0, 0, 1;
 			gv.setZero();
-			rover->setState(gc, gv);
+			kanga->setState(gc, gv);
 			buttonB = false;
 			remainingBatteryCapacityWh = batteryWh;
 			cout << endl
@@ -654,10 +655,10 @@ int main(int argc, char *argv[])
 		batteryVoltage[1] = currentBatteryVoltage * 1.02;
 		batteryVoltage[2] = currentBatteryVoltage * 1.03;
 		batteryVoltage[3] = currentBatteryVoltage * 0.96;
-		batteryCharge[0] = remainingBatteryCapacityWh / 4 * 0.99;
-		batteryCharge[1] = remainingBatteryCapacityWh / 4 * 1.02;
-		batteryCharge[2] = remainingBatteryCapacityWh / 4 * 1.03;
-		batteryCharge[3] = remainingBatteryCapacityWh / 4 * 0.96;
+		batteryEnergy[0] = remainingBatteryCapacityWh / 4 * 0.99;
+		batteryEnergy[1] = remainingBatteryCapacityWh / 4 * 1.02;
+		batteryEnergy[2] = remainingBatteryCapacityWh / 4 * 1.03;
+		batteryEnergy[3] = remainingBatteryCapacityWh / 4 * 0.96;
 
 		// Increment Time
 		time += RSStep * 1000;
