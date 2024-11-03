@@ -42,7 +42,7 @@ atomic<float> inputAxisZ(0.0f); // Right Joystick Y axis
 atomic<bool> buttonY(false);	// Trigger for toggling running
 atomic<bool> buttonB(false);	// Trigger for reseting rover position and velocity to lander
 
-// Data tp base station
+// Data t0 base station
 atomic<char *> frontCameraData(nullptr); // Front Camera Data
 atomic<char *> rearCameraData(nullptr);	 // Rear Camera Data
 atomic<char *> belowCameraData(nullptr); // Below Camera Data
@@ -51,15 +51,16 @@ atomic<double> motorCurrentDraw[4];		 // Current Draw Data
 atomic<double> imuLinearAcceleration_data[3];
 atomic<double> imuAngularVelocity_data[3];
 atomic<double> imuOrientation[4]; // Quaternion w, x, y, z
+atomic<double> batteryVoltage[4];
+atomic<double> batteryCharge[4];
 
 // Other shared variables
 atomic<bool> wasButtonYPressed(false); // Ensures button press only occurs on button down (wont be needed from nase station)
 atomic<bool> wasButtonBPressed(false); // Ensures button press only occurs on button down (wont be needed from nase station)
-atomic<bool> buttonA(false);	// :)
-atomic<bool> buttonX(false);	// :)
+atomic<bool> buttonA(false);		   // :)
+atomic<bool> buttonX(false);		   // :)
 atomic<bool> wasButtonAPressed(false); // :)
 atomic<bool> wasButtonXPressed(false); // :)
-
 int speedFactor = 1;
 
 // Dimensions of the images (make sure these match the camera settings)
@@ -177,7 +178,7 @@ void readController()
 				//           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
 				running = false;
 				break;
-			case 304: // Button A
+			case 304:								   // Button A
 				static bool wasButtonAPressed = false; // Track the previous state of Button Y
 
 				if (ev.value == 1 && !wasButtonAPressed)
@@ -193,7 +194,7 @@ void readController()
 					buttonA = false; // Clear buttonB to prevent continuous activation
 				}
 				break;
-			case 307: // Button X
+			case 307:								   // Button X
 				static bool wasButtonXPressed = false; // Track the previous state of Button Y
 
 				if (ev.value == 1 && !wasButtonXPressed)
@@ -401,6 +402,44 @@ int main(int argc, char *argv[])
 	rearCam->setMeasurementSource(raisim::Sensor::MeasurementSource::VISUALIZER);
 	auto imu = rover->getSensorSet("imu_camera_parent")->getSensor<raisim::InertialMeasurementUnit>("imu");
 
+	/// System Variables
+	// Power Params
+	double batteryVoltageMaX = 25.2;
+	double batteryVoltageMin = 18;
+	double buckConverterOutput = 24;
+	double batteryAh = 16;
+	double batteryWh = batteryAh * batteryVoltageMaX;
+	double remainingBatteryCapacityWh = batteryWh;
+	double currentBatteryVoltage = batteryVoltageMaX;
+	double computingPower = 0;
+	double motorPower = 0;
+	double nvidiaPowerConsumption = 10;
+
+	// Drivetrain Parameter
+	double motorI = 10;
+	int motorKv = 100;
+	double motorKt = (15 * sqrt(3) / M_PI) / motorKv;
+	double ESCeff = 0.78;
+	int reduction = 50;
+	double gearboxEff = 0.9;
+	double maxGearboxTorque = 20;
+
+	double maxWheelRPM;
+	double maxWheelRads;
+	double maxMotorTorque = motorKt * motorI;
+	double maxWheelTorque = maxMotorTorque * reduction;
+
+	// Control Parameters
+	bool active = false;
+	double wheelVel[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+	double controlForce[4] = {0.0, 0.0, 0.0, 0.0};
+	double kp = 10.0;
+	double kd = 0.00;
+	double Tp;
+	double Td;
+	double maxWheelTorqueDelta = 5;
+	double differentialTorque = 0;
+
 	/// Launch raisim server
 	raisim::RaisimServer server(&world);
 	server.launchServer();
@@ -418,32 +457,6 @@ int main(int argc, char *argv[])
 		;
 	cout << "Server Connected" << endl;
 	server.focusOn(rover);
-
-	// Drivetrain Parameter
-	int motorV = 24;
-	double motorI = 10;
-	int motorKv = 100;
-	double motorKt = (15 * sqrt(3) / M_PI) / motorKv;
-	double ESCeff = 0.78;
-	int reduction = 50;
-	double gearboxEff = 0.9;
-	double maxGearboxTorque = 20;
-
-	double maxWheelRPM = motorV * motorKv * ESCeff;
-	double maxWheelRads = maxWheelRPM * M_PI / 30 / 50;
-	double maxMotorTorque = motorKt * motorI;
-	double maxWheelTorque = maxMotorTorque * reduction;
-
-	// Control Parameters
-	bool active = false;
-	double wheelVel[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-	double controlForce[4] = {0.0, 0.0, 0.0, 0.0};
-	double kp = 10.0;
-	double kd = 0.00;
-	double Tp;
-	double Td;
-	double maxWheelTorqueDelta = 5;
-	double differentialTorque = 0;
 
 	// Plotting duration
 	int dur = 20;
@@ -472,11 +485,17 @@ int main(int argc, char *argv[])
 		ga = rover->getGeneralizedAcceleration().e();
 		gf = rover->getGeneralizedForce().e();
 
+		// Calculate Battery power loss (Will be handled in microcontrollers for main system so replace with read from internal comms, talk to electrical)
+		currentBatteryVoltage = 113.91062 * pow(-(1 - remainingBatteryCapacityWh / batteryWh) + 0.48318, 5) + 22.2;
+
 		// Set Motor Speeds
 		if (active)
 		{
-			wheelVel[1] = speedFactor * (inputAxisY / 2047) * maxWheelRads;  // BL
-			wheelVel[2] = speedFactor * (inputAxisY / 2047) * maxWheelRads;  // BR
+			maxWheelRPM = max(currentBatteryVoltage, buckConverterOutput) * motorKv * ESCeff;
+			maxWheelRads = maxWheelRPM * M_PI / 30 / 50;
+
+			wheelVel[1] = speedFactor * (inputAxisY / 2047) * maxWheelRads;	 // BL
+			wheelVel[2] = speedFactor * (inputAxisY / 2047) * maxWheelRads;	 // BR
 			wheelVel[4] = speedFactor * (-inputAxisZ / 2047) * maxWheelRads; // FR
 			wheelVel[5] = speedFactor * (-inputAxisZ / 2047) * maxWheelRads; // BR
 		}
@@ -527,61 +546,95 @@ int main(int argc, char *argv[])
 		// Send Forces to Rover simulation (For Real system replace with function to send values to motors via can)
 		rover->setGeneralizedForce({0, 0, 0, 0, 0, 0, -differentialTorque, controlForce[1], controlForce[2], differentialTorque, controlForce[4], controlForce[5]});
 
-		// Display Currents (Only needed until display made)
-		// if ((time % (1000 / cameraFPS)) < RSStep)
-		// {
-		// 	cout << fixed << setprecision(2);
-		// 	cout << "Front Left Current Draw: " << motorCurrentDraw[1] << " A, "
-		// 		 << "Front Right Current Draw: " << motorCurrentDraw[2] << " A, "
-		// 		 << "Rear Left Current Draw: " << motorCurrentDraw[4] << " A, "
-		// 		 << "Rear Right Current Draw: " << motorCurrentDraw[5] << " A, "
-		// 		 << "Total Current Draw: " << motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5] << " A   " << endl;
-		// }
+		// Calculate Battery power loss (Will be handled in microcontrollers for main system so replace with read from internal comms, talk to electrical)
+		motorPower = (motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5]) * max(currentBatteryVoltage, buckConverterOutput);
+		computingPower = nvidiaPowerConsumption;
+		remainingBatteryCapacityWh -= (motorPower + computingPower) * (RSStep / 3600.0);
+
+		// Check for battery depletion
+		if (active && (currentBatteryVoltage <= batteryVoltageMin || remainingBatteryCapacityWh <= 0))
+		{
+			remainingBatteryCapacityWh -= (motorPower + computingPower) * (RSStep / 3600.0);
+			cout << "BATTERY DEPLETED" << endl
+				 << "TURNING OFF KANGA" << endl;
+			active = false;
+		}
+
+		// Display Power Information (Only needed until display made)
+		if ((currentBatteryVoltage > batteryVoltageMin && remainingBatteryCapacityWh > 0) && (time % (1000 / cameraFPS)) < RSStep)
+		{
+			cout << fixed << setprecision(2);
+			// cout << "Front Left Current Draw: " << motorCurrentDraw[1] << " A, "
+			// 	 << "Front Right Current Draw: " << motorCurrentDraw[2] << " A, "
+			// 	 << "Rear Left Current Draw: " << motorCurrentDraw[4] << " A, "
+			// 	 << "Rear Right Current Draw: " << motorCurrentDraw[5] << " A, "
+			cout << "Motor Current Draw: " << motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5] << " A,     "
+				 << "Total Power Draw: " << motorPower + computingPower << " W,    "
+				 << "Battery Percentage: " << remainingBatteryCapacityWh / batteryWh << " %,    "
+				 << "Current Voltage: " << currentBatteryVoltage << " V,    "
+				 << "Remaining Wh: " << remainingBatteryCapacityWh << " Wh    " << endl;
+		}
 
 		// Toggle rover activation
 		if (buttonY)
 		{ // Only runs on a true "buttonY" from rising edge detection
-			if (!active)
+			// Enable Rover if battery isnt depleted and not currently active
+			if (!active && currentBatteryVoltage > 18 && remainingBatteryCapacityWh > 0)
 			{
 				// Activation code
-				cout << "Turning on motors" << endl;
+				cout << "TURNING ON MOTORS" << endl;
 				active = true;
 			}
+			// Error message for if not active and battery depleted
+			else if (!active)
+			{
+				cout << "BATTERY DEPLETED" << endl;
+			}
 			else
+			// Deactive motors
 			{
 				// Deactivation code
-				cout << "Turning off motors" << endl;
+				cout << "TURNING OFF MOTORS" << endl;
 				active = false;
 			}
 			buttonY = false; // Reset buttonY after toggling to await the next rising edge
 		}
 
+		// Fun (not needed)
 		if (buttonA)
 		{
-			speedFactor*=-1;
+			speedFactor *= -1;
 			buttonA = false;
 		}
 
+		// Fun (not needed)
 		if (buttonX)
 		{
-			if (abs(speedFactor) == 2) {
-				speedFactor*=5;
-			} else if (abs(speedFactor) == 10) {
-				speedFactor/=10;
-			} else {
-				speedFactor*=2;
+			if (abs(speedFactor) == 2)
+			{
+				speedFactor *= 5;
 			}
-			buttonX = false; 
-			
+			else if (abs(speedFactor) == 10)
+			{
+				speedFactor /= 10;
+			}
+			else
+			{
+				speedFactor *= 2;
+			}
+			buttonX = false;
 		}
 
-		// If fallen off edge or triggered send back to centre
+		// If fallen off edge or triggered, rest kanga
 		if (fabs(gc[0]) > 35. || fabs(gc[1]) > 35. || buttonB)
 		{
 			gc.segment<7>(0) << 0, 0, 2.3, 0, 0, 0, 1;
 			gv.setZero();
 			rover->setState(gc, gv);
 			buttonB = false;
+			remainingBatteryCapacityWh = batteryWh;
+			cout << endl
+				 << "KANGA RESET" << endl;
 		}
 
 		// Get IMU Data (Replace with function to read imu from sensor board through internal comms, talk to electrical)
@@ -595,6 +648,16 @@ int main(int argc, char *argv[])
 			aboveCameraData = aboveCam->getImageBuffer().data();
 			belowCameraData = belowCam->getImageBuffer().data();
 		}
+
+		// Save to atomic variables and add fluctuations for identification;
+		batteryVoltage[0] = currentBatteryVoltage * 0.99;
+		batteryVoltage[1] = currentBatteryVoltage * 1.02;
+		batteryVoltage[2] = currentBatteryVoltage * 1.03;
+		batteryVoltage[3] = currentBatteryVoltage * 0.96;
+		batteryCharge[0] = remainingBatteryCapacityWh / 4 * 0.99;
+		batteryCharge[1] = remainingBatteryCapacityWh / 4 * 1.02;
+		batteryCharge[2] = remainingBatteryCapacityWh / 4 * 1.03;
+		batteryCharge[3] = remainingBatteryCapacityWh / 4 * 0.96;
 
 		// Increment Time
 		time += RSStep * 1000;
