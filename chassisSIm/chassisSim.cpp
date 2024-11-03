@@ -61,7 +61,7 @@ atomic<bool> buttonA(false);		   // :)
 atomic<bool> buttonX(false);		   // :)
 atomic<bool> wasButtonAPressed(false); // :)
 atomic<bool> wasButtonXPressed(false); // :)
-int speedFactor = 1;
+int funFactor = 1;
 
 // Dimensions of the images (make sure these match the camera settings)
 const int width = 640;	// Replace with your actual width
@@ -406,10 +406,11 @@ int main(int argc, char *argv[])
 	/// System Variables
 	// Power Params
 	double batteryVoltageMaX = 25.2;
+	double batteryVoltageNominal = 22.2;
 	double batteryVoltageMin = 18;
 	double buckConverterOutput = 24;
 	double batteryAh = 18;
-	double batteryWh = batteryAh * batteryVoltageMaX;
+	double batteryWh = batteryAh * batteryVoltageNominal;
 	double remainingBatteryCapacityWh = batteryWh;
 	double currentBatteryVoltage = batteryVoltageMaX;
 	double computingPower;
@@ -495,10 +496,10 @@ int main(int argc, char *argv[])
 			maxWheelRPM = max(currentBatteryVoltage, buckConverterOutput) * motorKv * ESCeff;
 			maxWheelRads = maxWheelRPM * M_PI / 30 / 50;
 
-			wheelVel[1] = speedFactor * (inputAxisY / 2047) * maxWheelRads;	 // BL
-			wheelVel[2] = speedFactor * (inputAxisY / 2047) * maxWheelRads;	 // BR
-			wheelVel[4] = speedFactor * (-inputAxisZ / 2047) * maxWheelRads; // FR
-			wheelVel[5] = speedFactor * (-inputAxisZ / 2047) * maxWheelRads; // BR
+			wheelVel[1] = funFactor * (inputAxisY / 2047) * maxWheelRads;	 // BL
+			wheelVel[2] = funFactor * (inputAxisY / 2047) * maxWheelRads;	 // BR
+			wheelVel[4] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; // FR
+			wheelVel[5] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; // BR
 		}
 		else
 		{
@@ -604,24 +605,24 @@ int main(int argc, char *argv[])
 		// Fun (not needed)
 		if (buttonA)
 		{
-			speedFactor *= -1;
+			funFactor *= -1;
 			buttonA = false;
 		}
 
 		// Fun (not needed)
 		if (buttonX)
 		{
-			if (abs(speedFactor) == 2)
+			if (abs(funFactor) == 2)
 			{
-				speedFactor *= 5;
+				funFactor *= 5;
 			}
-			else if (abs(speedFactor) == 10)
+			else if (abs(funFactor) == 10)
 			{
-				speedFactor /= 10;
+				funFactor /= 10;
 			}
 			else
 			{
-				speedFactor *= 2;
+				funFactor *= 2;
 			}
 			buttonX = false;
 		}
