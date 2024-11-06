@@ -27,7 +27,7 @@
 using namespace std;
 namespace plt = matplotlibcpp;
 
-#define FlatMap false
+#define FlatMap true
 #define PlotMotors true
 #define RSStep 0.005
 #define UseLander false
@@ -468,7 +468,7 @@ int main(int argc, char *argv[])
 	server.focusOn(kanga);
 
 	// Plotting duration
-	int dur = 20;
+	int dur = 10;
 
 	// Create vector variables for plotting
 	vector<double> t(dur / (RSStep));
@@ -501,15 +501,22 @@ int main(int argc, char *argv[])
 		currentBatteryVoltage = 113.91062 * pow(-(1 - remainingBatteryCapacityWh / batteryWh) + 0.48318, 5) + 22.2;
 
 		// Set Motor Speeds
-		if (active)
+		if (active || tuning)
 		{
-			maxWheelRPM = max(currentBatteryVoltage, buckConverterOutput) * motorKv * ESCeff;
-			maxWheelRads = maxWheelRPM * M_PI / 30 / 50;
+			if (!tuning) {
+				maxWheelRPM = max(currentBatteryVoltage, buckConverterOutput) * motorKv * ESCeff;
+				maxWheelRads = maxWheelRPM * M_PI / 30 / 50;
 
-			wheelVel[1] = funFactor * (inputAxisY / 2047) * maxWheelRads;	// BL
-			wheelVel[2] = funFactor * (inputAxisY / 2047) * maxWheelRads;	// FL
-			wheelVel[4] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; 	// FR
-			wheelVel[5] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; 	// BR
+				wheelVel[1] = funFactor * (inputAxisY / 2047) * maxWheelRads;	// BL
+				wheelVel[2] = funFactor * (inputAxisY / 2047) * maxWheelRads;	// FL
+				wheelVel[4] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; 	// FR
+				wheelVel[5] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; 	// BR
+			} else {
+				wheelVel[1] = -5 * (time > 3000);
+				wheelVel[2] = -5 * (time > 3000);
+				wheelVel[4] = 5 * (time > 3000);
+				wheelVel[5] = 5 * (time > 3000);
+			}			
 		}
 		else
 		{
@@ -538,17 +545,6 @@ int main(int argc, char *argv[])
 			// Capped Torques
 			controlForce[wheel] = max(min(controlForce[wheel], max(maxWheelTorque, maxGearboxTorque)), -max(maxWheelTorque, maxGearboxTorque));
 
-			
-			
-			// For Plots
-			// if (PlotMotors && (time < dur / RSStep))
-			// {
-			// 	t[time/(RSStep*1000)] = time*RSStep*1000;
-			// 	wheelAngularVelocityDesired[wheel][time/(RSStep*1000)] = wheelVel[wheel];
-			// 	wheelAngularVelocityActual[wheel][time/(RSStep*1000)] = gv[6 + wheel];
-			// 	wheelTorqueDesired[wheel][time/(RSStep*1000)] = controlForce[wheel];
-			// 	wheelTorqueActual[wheel][time/(RSStep*1000)] = gf[6 + wheel];
-			// }
 
 			// Calculate motor current draws
 			motorCurrentDraw[wheel] = abs(gf[6 + wheel]) / (reduction * gearboxEff * motorKt);
@@ -717,47 +713,47 @@ int main(int argc, char *argv[])
 		plt::ylabel("Torque (Nm)");
 		plt::xlabel("Time (ms)");
 
-		plt::figure_size(1366, 768);
-		plt::plot(t, wheelAngularVelocityDesired[2], "r-");
-		plt::plot(t, wheelAngularVelocityActual[2], "b-");
-		plt::title("Front Left Wheel Angular Velocity");
-		plt::ylabel("Angular Velocity (rad/s)");
-		plt::xlabel("Time (ms)");
+		// plt::figure_size(1366, 768);
+		// plt::plot(t, wheelAngularVelocityDesired[2], "r-");
+		// plt::plot(t, wheelAngularVelocityActual[2], "b-");
+		// plt::title("Front Left Wheel Angular Velocity");
+		// plt::ylabel("Angular Velocity (rad/s)");
+		// plt::xlabel("Time (ms)");
 
-		plt::figure_size(1366, 768);
-		plt::plot(t, wheelTorqueDesired[2], "r-");
-		plt::plot(t, wheelTorqueActual[2], "b-");
-		plt::title("Front Left Wheel Torque");
-		plt::ylabel("Torque (Nm)");
-		plt::xlabel("Time (ms)");
+		// plt::figure_size(1366, 768);
+		// plt::plot(t, wheelTorqueDesired[2], "r-");
+		// plt::plot(t, wheelTorqueActual[2], "b-");
+		// plt::title("Front Left Wheel Torque");
+		// plt::ylabel("Torque (Nm)");
+		// plt::xlabel("Time (ms)");
 
-		plt::figure_size(1366, 768);
-		plt::plot(t, wheelAngularVelocityDesired[4], "r-");
-		plt::plot(t, wheelAngularVelocityActual[4], "b-");
-		plt::title("Front Right Wheel Angular Velocity");
-		plt::ylabel("Angular Velocity (rad/s)");
-		plt::xlabel("Time (ms)");
+		// plt::figure_size(1366, 768);
+		// plt::plot(t, wheelAngularVelocityDesired[4], "r-");
+		// plt::plot(t, wheelAngularVelocityActual[4], "b-");
+		// plt::title("Front Right Wheel Angular Velocity");
+		// plt::ylabel("Angular Velocity (rad/s)");
+		// plt::xlabel("Time (ms)");
 
-		plt::figure_size(1366, 768);
-		plt::plot(t, wheelTorqueDesired[4], "r-");
-		plt::plot(t, wheelTorqueActual[4], "b-");
-		plt::title("Front Right Wheel Torque");
-		plt::ylabel("Torque (Nm)");
-		plt::xlabel("Time (ms)");
+		// plt::figure_size(1366, 768);
+		// plt::plot(t, wheelTorqueDesired[4], "r-");
+		// plt::plot(t, wheelTorqueActual[4], "b-");
+		// plt::title("Front Right Wheel Torque");
+		// plt::ylabel("Torque (Nm)");
+		// plt::xlabel("Time (ms)");
 
-		plt::figure_size(1366, 768);
-		plt::plot(t, wheelAngularVelocityDesired[5], "r-");
-		plt::plot(t, wheelAngularVelocityActual[5], "b-");
-		plt::title("Back Right Wheel Angular Velocity");
-		plt::ylabel("Angular Velocity (rad/s)");
-		plt::xlabel("Time (ms)");
+		// plt::figure_size(1366, 768);
+		// plt::plot(t, wheelAngularVelocityDesired[5], "r-");
+		// plt::plot(t, wheelAngularVelocityActual[5], "b-");
+		// plt::title("Back Right Wheel Angular Velocity");
+		// plt::ylabel("Angular Velocity (rad/s)");
+		// plt::xlabel("Time (ms)");
 
-		plt::figure_size(1366, 768);
-		plt::plot(t, wheelTorqueDesired[5], "r-");
-		plt::plot(t, wheelTorqueActual[5], "b-");
-		plt::title("Back Right Wheel Torque");
-		plt::ylabel("Torque (Nm)");
-		plt::xlabel("Time (ms)");
+		// plt::figure_size(1366, 768);
+		// plt::plot(t, wheelTorqueDesired[5], "r-");
+		// plt::plot(t, wheelTorqueActual[5], "b-");
+		// plt::title("Back Right Wheel Torque");
+		// plt::ylabel("Torque (Nm)");
+		// plt::xlabel("Time (ms)");
 
 		plt::show();
 	}
