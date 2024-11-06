@@ -27,7 +27,7 @@
 using namespace std;
 namespace plt = matplotlibcpp;
 
-#define FlatMap true
+#define FlatMap false
 #define PlotMotors true
 #define RSStep 0.005
 #define UseLander false
@@ -392,7 +392,7 @@ int main(int argc, char *argv[])
 	Eigen::VectorXd gc(kanga->getGeneralizedCoordinateDim()), gv(kanga->getDOF()), ga(kanga->getDOF()), gf(kanga->getDOF()), damping(kanga->getDOF());
 	gc.setZero();
 	gv.setZero();
-	gc.segment<7>(0) << 0, 0, 0.8 + 1.5 * UseLander, 0, 0, 0, 1;
+	gc.segment<7>(0) << 0, 0, 2.3 -+ 1.5 * FlatMap, 0, 0, 0, 1;
 	kanga->setGeneralizedCoordinate(gc);
 	kanga->setGeneralizedVelocity(gv);
 	damping.setConstant(0);
