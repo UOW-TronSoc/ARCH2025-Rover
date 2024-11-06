@@ -29,10 +29,10 @@ namespace plt = matplotlibcpp;
 
 #define FlatMap true
 #define PlotMotors true
-#define RSStep 0.005
+#define RSStep 0.001
 #define UseLander false
-#define tuning true
-#define delay true
+#define tuning false
+#define delay false
 
 /// Variables to share between threads
 
@@ -75,8 +75,8 @@ const int cameraFPS = 30;
 void signalHandler(int signum)
 {
 	running = false; // Stop the loops
-	plt::close();  // Close all matplotlib figures
-    exit(signum);  // Exit the program
+	plt::close();	 // Close all matplotlib figures
+	exit(signum);	 // Exit the program
 }
 
 // Function for reading from controller in new thread (Replace with function to interpret data/commands from abse station)
@@ -113,7 +113,7 @@ void readController()
 	static int lowVelCounter = 0;
 
 	// Controlle reading cycle
-	while (running)
+	while (true)
 	{
 		// Read event
 		ssize_t n = read(fd, &ev, sizeof(ev));
@@ -181,7 +181,27 @@ void readController()
 			case 318: // Right Joystick Click
 				// cout << "Right Joystick Click: " << ev.value << " ("
 				//           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-				running = false;
+				
+
+				static bool wasR3Pressed = false; // Track the previous state of Button Y
+
+				if (ev.value == 1 && !wasR3Pressed)
+				{
+					if (running) {
+						running = false;
+					} else {
+						raise(SIGINT);
+					}
+					break;		  // Signal the button press
+				}
+				else if (ev.value == 0)
+				{
+					// Button Y is released, reset the press state
+					wasR3Pressed = false;
+					buttonA = false; // Clear buttonB to prevent continuous activation
+				}
+
+				
 				break;
 			case 304:								   // Button A
 				static bool wasButtonAPressed = false; // Track the previous state of Button Y
@@ -357,7 +377,7 @@ int main(int argc, char *argv[])
 	auto binaryPath = raisim::Path::setFromArgv(argv[0]);
 	raisim::RaiSimMsg::setFatalCallback([]()
 										{ throw; });
-	
+
 	// Setup World
 	raisim::World world;
 	world.setTimeStep(RSStep);
@@ -377,7 +397,8 @@ int main(int argc, char *argv[])
 	hm->setAppearance("soil2");
 
 	// Add lander platform
-	if (UseLander) {
+	if (UseLander)
+	{
 		raisim::Mat<3, 3> inertia;
 		inertia.setIdentity();
 		raisim::Vec<3> com = {0, 0, 0};
@@ -392,7 +413,7 @@ int main(int argc, char *argv[])
 	Eigen::VectorXd gc(kanga->getGeneralizedCoordinateDim()), gv(kanga->getDOF()), ga(kanga->getDOF()), gf(kanga->getDOF()), damping(kanga->getDOF());
 	gc.setZero();
 	gv.setZero();
-	gc.segment<7>(0) << 0, 0, 2.3 -+ 1.5 * FlatMap, 0, 0, 0, 1;
+	gc.segment<7>(0) << 0, 0, 2.3 - +1.5 * FlatMap, 0, 0, 0, 1;
 	kanga->setGeneralizedCoordinate(gc);
 	kanga->setGeneralizedVelocity(gv);
 	damping.setConstant(0);
@@ -425,29 +446,49 @@ int main(int argc, char *argv[])
 	double nvidiaPowerConsumption = 10;
 
 	// Drivetrain Parameter
-	double motorI = 10;
+	double motorI = 4;
 	int motorKv = 100;
 	double motorKt = (15 * sqrt(3) / M_PI) / motorKv;
-	double ESCeff = 0.78;
+	double ESCeff = 0.718;
 	int reduction = 50;
 	double gearboxEff = 0.9;
+	double maxMotorTorque = 4.96;
 	double maxGearboxTorque = 20;
+
+	double wheelInertia = 0.032711338109240588323;
+	double motorInertia = 0.0001;
+	double driveTrainInertia = wheelInertia/pow(reduction, 2) + motorInertia;
 
 	double maxWheelRPM;
 	double maxWheelRads;
-	double maxMotorTorque = motorKt * motorI;
-	double maxWheelTorque = maxMotorTorque * reduction;
+	double motorTorqueCap = motorKt * motorI;
+	double maxWheelTorque = motorTorqueCap * reduction / gearboxEff;
+
+	double motorTorqueCapDelta = motorTorqueCap * 0.005 * RSStep/1000;
+	double maxWheelTorqueDelta = maxMotorTorque * reduction / gearboxEff;
+
+	cout << motorKt <<endl;
+	cout<<min(maxGearboxTorque, maxWheelTorque)<<endl;
 
 	// Control Parameters
 	bool active = false;
+	double wheelPos[6];
 	double wheelVel[6];
-	double controlForce[4];
-	double kp = 10.0;
-	double kd = 0.00;
+	double wheelAcc[6];
+	double controlForce[6];
+	double Kp = 10.0;
+	double Kd = 0.00;
+	double Ki = 0.00;
 	double Tp;
 	double Td;
-	double maxWheelTorqueDelta = 5;
 	double differentialTorque;
+	double smoothedVelA[6];
+	double smoothedVelB[6];
+	double alpha = 0.1;
+	double beta = 0.1;
+
+	double A = 5;
+	double w = 2*M_PI /     2 ;
 
 	/// Launch raisim server
 	raisim::RaisimServer server(&world);
@@ -465,17 +506,25 @@ int main(int argc, char *argv[])
 	while (!server.isConnected())
 		;
 	cout << "Server Connected" << endl;
+
 	server.focusOn(kanga);
 
 	// Plotting duration
-	int dur = 10;
+	int dur = 60;
 
 	// Create vector variables for plotting
 	vector<double> t(dur / (RSStep));
+
 	vector<vector<double>> wheelAngularVelocityDesired(6, vector<double>(dur / RSStep));
 	vector<vector<double>> wheelAngularVelocityActual(6, vector<double>(dur / RSStep));
+	vector<vector<double>> wheelAngularVelocitySmoothedA(6, vector<double>(dur / RSStep));
+	vector<vector<double>> wheelAngularVelocitySmoothedB(6, vector<double>(dur / RSStep));
+	vector<vector<double>> wheelAngularAccelerationActual(6, vector<double>(dur / RSStep));
+	vector<vector<double>> wheelAngularAccelerationDesired(6, vector<double>(dur / RSStep));
 	vector<vector<double>> wheelTorqueActual(6, vector<double>(dur / RSStep));
 	vector<vector<double>> wheelTorqueDesired(6, vector<double>(dur / RSStep));
+	// vector<vector<double>> wheel(6, vector<double>(dur / RSStep));
+	vector<double> currentDraw(dur / (RSStep));
 
 	// Set start time
 	int time = 0;
@@ -485,8 +534,9 @@ int main(int argc, char *argv[])
 	while (running)
 	{
 		// Real Time delay and physics integration
-		
-		if (delay) {
+
+		if (delay)
+		{
 			RS_TIMED_LOOP(int(world.getTimeStep() * 1e6))
 		}
 		server.integrateWorldThreadSafe();
@@ -500,23 +550,58 @@ int main(int argc, char *argv[])
 		// Calculate Battery power loss (Will be handled in microcontrollers for main system so replace with read from internal comms, talk to electrical)
 		currentBatteryVoltage = 113.91062 * pow(-(1 - remainingBatteryCapacityWh / batteryWh) + 0.48318, 5) + 22.2;
 
+		if (tuning && (time >= dur * 1000)) {
+			running = false;
+		}
+
 		// Set Motor Speeds
 		if (active || tuning)
 		{
-			if (!tuning) {
+			if (!tuning)
+			{
 				maxWheelRPM = max(currentBatteryVoltage, buckConverterOutput) * motorKv * ESCeff;
 				maxWheelRads = maxWheelRPM * M_PI / 30 / 50;
 
-				wheelVel[1] = funFactor * (inputAxisY / 2047) * maxWheelRads;	// BL
-				wheelVel[2] = funFactor * (inputAxisY / 2047) * maxWheelRads;	// FL
-				wheelVel[4] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; 	// FR
-				wheelVel[5] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; 	// BR
-			} else {
-				wheelVel[1] = -5 * (time > 3000);
-				wheelVel[2] = -5 * (time > 3000);
-				wheelVel[4] = 5 * (time > 3000);
-				wheelVel[5] = 5 * (time > 3000);
-			}			
+				wheelVel[1] = funFactor * (inputAxisY / 2047) * maxWheelRads;  // BL
+				wheelVel[2] = funFactor * (inputAxisY / 2047) * maxWheelRads;  // FL
+				wheelVel[4] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; // FR
+				wheelVel[5] = funFactor * (-inputAxisZ / 2047) * maxWheelRads; // BR
+			}
+			else
+			{
+			// 	wheelVel[1] = -A*w*cos(w*time/1000)* (time > 3000);
+			// 	wheelVel[2] = -A*w*cos(w*time/1000) * (time > 3000);
+			// 	wheelVel[4] = A*w*cos(w*time/1000) * (time > 3000);
+			// 	wheelVel[5] = A*w*cos(w*time/1000) * (time > 3000);
+
+			// 	wheelPos[1] = -A*sin(w*time/1000)* (time > 3000);
+			// 	wheelPos[2] = -A*sin(w*time/1000) * (time > 3000);
+			// 	wheelPos[4] = A*sin(w*time/1000) * (time > 3000);
+			// 	wheelPos[5] = A*sin(w*time/1000) * (time > 3000);
+
+			// 	wheelAcc[1] = -A*w*w*-sin(w*time/1000)* (time > 3000);
+			// 	wheelAcc[2] = -A*w*w*-sin(w*time/1000) * (time > 3000);
+			// 	wheelAcc[4] = A*w*w*-sin(w*time/1000) * (time > 3000);
+			// 	wheelAcc[5] = A*w*w*-sin(w*time/1000) * (time > 3000);
+
+				int T1 = 9000;
+				int T2 = 17000;
+
+				wheelVel[1] = -(4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
+				wheelVel[2] = -(4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
+				wheelVel[4] = (4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
+				wheelVel[5] = (4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
+
+				// wheelPos[1] = -A*sin(w*time/1000)* (time > 3000);
+				// wheelPos[2] = -A*sin(w*time/1000) * (time > 3000);
+				// wheelPos[4] = A*sin(w*time/1000) * (time > 3000);
+				// wheelPos[5] = A*sin(w*time/1000) * (time > 3000);
+
+				// wheelAcc[1] = -A*w*w*-sin(w*time/1000)* (time > 3000);
+				// wheelAcc[2] = -A*w*w*-sin(w*time/1000) * (time > 3000);
+				// wheelAcc[4] = A*w*w*-sin(w*time/1000) * (time > 3000);
+				// wheelAcc[5] = A*w*w*-sin(w*time/1000) * (time > 3000);
+			}
 		}
 		else
 		{
@@ -533,32 +618,65 @@ int main(int argc, char *argv[])
 			{
 				continue;
 			}
-			// PID Controller with velocity input and torque output
-			// PID Terms
-			Tp = kp * (wheelVel[wheel] - gv[6 + wheel]);
-			Td = kd * (wheelVel[wheel] - gv[6 + wheel]) / RSStep;
 
-			// Base Torques
-			controlForce[wheel] = wheelVel[wheel] + Tp + Td;
+			// Temporary localised PID tune parameters
+			Kp = 75.0 * 100000;
+			Kd = 5.60 * 100000;
+
+			alpha = 0.01;		
+
+			double q = gc[7+wheel];
+			// double qRef = gc[7+wheel] + RSStep * wheelVel[wheel];
+
+			double qd = gv[6+wheel];
+			// double qdRef = wheelVel[wheel];
+
+			double qdd = ga[6+wheel];
+			// double qddRef = 0;
+
+			// double qddMotor = qddRef + Kd*(qdRef - qd) + Kp*(qRef-q);
+
+			smoothedVelA[wheel] = alpha * wheelVel[wheel] + (1.0 - alpha) * smoothedVelA[wheel];
+			// smoothedVelA[wheel] = alpha * wheelVel[wheel] + (1.0 - alpha) * smoothedVelA[wheel];
+
+
+			double qdRef = smoothedVelA[wheel];
+			double qRef = q + qdRef * RSStep;
+			double qddRef = (qdRef - qd) / RSStep;
+
+			double qddMotor = qddRef + Kd*(qdRef - qd) + Kp*(qRef-q);
+
+			controlForce[wheel] = qddMotor * driveTrainInertia;
+
 			// Smoothed Torques
 			controlForce[wheel] = max(min(controlForce[wheel], gf[6 + wheel] + maxWheelTorqueDelta), gf[6 + wheel] - maxWheelTorqueDelta);
+
+
 			// Capped Torques
-			controlForce[wheel] = max(min(controlForce[wheel], max(maxWheelTorque, maxGearboxTorque)), -max(maxWheelTorque, maxGearboxTorque));
+			controlForce[wheel] = max(min(controlForce[wheel], min(maxWheelTorque, maxGearboxTorque)), -min(maxWheelTorque, maxGearboxTorque));;
 
 
 			// Calculate motor current draws
 			motorCurrentDraw[wheel] = abs(gf[6 + wheel]) / (reduction * gearboxEff * motorKt);
 		}
+		
+		
 
-		if (PlotMotors && (time < dur *1000)) {
+		if (PlotMotors && (time < dur * 1000))
+		{
 			for (size_t wheel = 0; wheel < 6; wheel++)
 			{
-				t[time/(RSStep*1000)] = time;
-				wheelAngularVelocityDesired[wheel][time/(RSStep*1000)] = wheelVel[wheel];
-				wheelAngularVelocityActual[wheel][time/(RSStep*1000)] = gv[6 + wheel];
-				wheelTorqueDesired[wheel][time/(RSStep*1000)] = controlForce[wheel];
-				wheelTorqueActual[wheel][time/(RSStep*1000)] = gf[6 + wheel];
+				t[time / (RSStep * 1000)] = time;
+				wheelAngularVelocityDesired[wheel][time / (RSStep * 1000)] = wheelVel[wheel];
+				wheelAngularVelocitySmoothedA[wheel][time / (RSStep * 1000)] = smoothedVelA[wheel];
+				wheelAngularVelocitySmoothedB[wheel][time / (RSStep * 1000)] = smoothedVelB[wheel];
+				wheelAngularVelocityActual[wheel][time / (RSStep * 1000)] = gv[6 + wheel];
+				// wheelAngularAccelerationDesired[wheel][time / (RSStep * 1000)] = wheelAcc[wheel];
+				// wheelAngularAccelerationActual[wheel][time / (RSStep * 1000)] = ga[6 + wheel];
+				wheelTorqueDesired[wheel][time / (RSStep * 1000)] = controlForce[wheel];
+				wheelTorqueActual[wheel][time / (RSStep * 1000)] = gf[6 + wheel];
 			}
+			currentDraw[time / (RSStep * 1000)] = motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5];
 		}
 
 		// Fake differential control (Not required on real model)
@@ -589,11 +707,11 @@ int main(int argc, char *argv[])
 			// 	 << "Front Right Current Draw: " << motorCurrentDraw[2] << " A, "
 			// 	 << "Rear Left Current Draw: " << motorCurrentDraw[4] << " A, "
 			// 	 << "Rear Right Current Draw: " << motorCurrentDraw[5] << " A, "
-			cout << "Motor Current Draw: " << motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5] << " A,     "
-				 << "Total Power Draw: " << motorPower + computingPower << " W,    "
-				 << "Battery Percentage: " << remainingBatteryCapacityWh / batteryWh << " %,    "
-				 << "Current Voltage: " << currentBatteryVoltage << " V,    "
-				 << "Remaining Wh: " << remainingBatteryCapacityWh << " Wh    " << endl;
+			// cout << "Motor Current Draw: " << motorCurrentDraw[1] + motorCurrentDraw[2] + motorCurrentDraw[4] + motorCurrentDraw[5] << " A,     " << endl;
+			// 	 << "Total Power Draw: " << motorPower + computingPower << " W,    "
+			// 	 << "Battery Percentage: " << remainingBatteryCapacityWh / batteryWh << " %,    "
+			// 	 << "Current Voltage: " << currentBatteryVoltage << " V,    "
+			// 	 << "Remaining Wh: " << remainingBatteryCapacityWh << " Wh    " << endl;
 		}
 
 		// Toggle kanga activation
@@ -693,15 +811,17 @@ int main(int argc, char *argv[])
 
 	if (PlotMotors)
 	{
-		// plt::figure_size(1366, 768);
-		// plt::plot(t, t, "r-");
-		// plt::title("Front Left Wheel Angular Velocity");
-		// plt::ylabel("Angular Velocity (rad/s)");
-		// plt::xlabel("Time (ms)");
+		plt::figure_size(1366, 768);
+		plt::plot(t, currentDraw, "r-");
+		plt::title("Wheel Current Draw");
+		plt::ylabel("Current (A)");
+		plt::xlabel("Time (ms)");
 
 		plt::figure_size(1366, 768);
-		plt::plot(t, wheelAngularVelocityDesired[2], "r-");
-		plt::plot(t, wheelAngularVelocityActual[1], "b-");
+		plt::plot(t, wheelAngularVelocityActual[1], "r-");
+		plt::plot(t, wheelAngularVelocitySmoothedA[1], "g-");
+		plt::plot(t, wheelAngularVelocitySmoothedB[1], "k-");
+		plt::plot(t, wheelAngularVelocityDesired[1], "b-");
 		plt::title("Back Left Wheel Angular Velocity");
 		plt::ylabel("Angular Velocity (rad/s)");
 		plt::xlabel("Time (ms)");
@@ -712,6 +832,7 @@ int main(int argc, char *argv[])
 		plt::title("Back Left Wheel Torque");
 		plt::ylabel("Torque (Nm)");
 		plt::xlabel("Time (ms)");
+		
 
 		// plt::figure_size(1366, 768);
 		// plt::plot(t, wheelAngularVelocityDesired[2], "r-");
@@ -741,19 +862,20 @@ int main(int argc, char *argv[])
 		// plt::ylabel("Torque (Nm)");
 		// plt::xlabel("Time (ms)");
 
-		// plt::figure_size(1366, 768);
-		// plt::plot(t, wheelAngularVelocityDesired[5], "r-");
-		// plt::plot(t, wheelAngularVelocityActual[5], "b-");
-		// plt::title("Back Right Wheel Angular Velocity");
-		// plt::ylabel("Angular Velocity (rad/s)");
-		// plt::xlabel("Time (ms)");
+		plt::figure_size(1366, 768);
+		plt::plot(t, wheelAngularVelocityActual[5], "r-");
+		plt::plot(t, wheelAngularVelocitySmoothedA[5], "g-");
+		plt::plot(t, wheelAngularVelocityDesired[5], "b-");
+		plt::title("Back Right Wheel Angular Velocity");
+		plt::ylabel("Angular Velocity (rad/s)");
+		plt::xlabel("Time (ms)");
 
-		// plt::figure_size(1366, 768);
-		// plt::plot(t, wheelTorqueDesired[5], "r-");
-		// plt::plot(t, wheelTorqueActual[5], "b-");
-		// plt::title("Back Right Wheel Torque");
-		// plt::ylabel("Torque (Nm)");
-		// plt::xlabel("Time (ms)");
+		plt::figure_size(1366, 768);
+		plt::plot(t, wheelTorqueDesired[5], "r-");
+		plt::plot(t, wheelTorqueActual[5], "b-");
+		plt::title("Back Right Wheel Torque");
+		plt::ylabel("Torque (Nm)");
+		plt::xlabel("Time (ms)");
 
 		plt::show();
 	}
