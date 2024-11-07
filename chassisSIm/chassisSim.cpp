@@ -27,6 +27,7 @@
 using namespace std;
 namespace plt = matplotlibcpp;
 
+
 #define FlatMap true
 #define PlotMotors true
 #define RSStep 0.001
@@ -510,7 +511,7 @@ int main(int argc, char *argv[])
 	server.focusOn(kanga);
 
 	// Plotting duration
-	int dur = 60;
+	int dur = 10;
 
 	// Create vector variables for plotting
 	vector<double> t(dur / (RSStep));
@@ -584,8 +585,8 @@ int main(int argc, char *argv[])
 			// 	wheelAcc[4] = A*w*w*-sin(w*time/1000) * (time > 3000);
 			// 	wheelAcc[5] = A*w*w*-sin(w*time/1000) * (time > 3000);
 
-				int T1 = 9000;
-				int T2 = 17000;
+				int T1 = 4500;
+				int T2 = 7000;
 
 				wheelVel[1] = -(4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
 				wheelVel[2] = -(4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
@@ -623,7 +624,8 @@ int main(int argc, char *argv[])
 			Kp = 75.0 * 100000;
 			Kd = 5.60 * 100000;
 
-			alpha = 0.01;		
+			alpha = 0.03;		
+			// beta = 0.1;
 
 			double q = gc[7+wheel];
 			// double qRef = gc[7+wheel] + RSStep * wheelVel[wheel];
@@ -636,8 +638,25 @@ int main(int argc, char *argv[])
 
 			// double qddMotor = qddRef + Kd*(qdRef - qd) + Kp*(qRef-q);
 
-			smoothedVelA[wheel] = alpha * wheelVel[wheel] + (1.0 - alpha) * smoothedVelA[wheel];
-			// smoothedVelA[wheel] = alpha * wheelVel[wheel] + (1.0 - alpha) * smoothedVelA[wheel];
+			// if (smoothedVelA[wheel] == nan) {
+			// 	smoothedVelA[wheel] = 0;
+			// }
+
+			double ratio = pow(Utils::constrain(abs(1*(qd + 0.00001)/(wheelVel[wheel] + 0.00001))+0.008, 0, 1), 1.05);
+
+			ratio*=alpha;
+
+			cout << qd << ", ";
+			cout <<wheelVel[wheel]<< ", ";
+			cout <<ratio<<endl;
+
+			if (abs(wheelVel[wheel]) > 0.01) {
+				smoothedVelA[wheel] = ratio * wheelVel[wheel] + (1.0 - ratio) * smoothedVelA[wheel];
+			} else {
+				smoothedVelA[wheel] = 0.08 * wheelVel[wheel] + (1.0 - 0.08) * smoothedVelA[wheel];;
+			}
+			
+			// smoothedVelB[wheel] = beta * wheelVel[wheel] + (1.0 - beta) * smoothedVelA[wheel];
 
 
 			double qdRef = smoothedVelA[wheel];
