@@ -28,10 +28,10 @@ using namespace std;
 namespace plt = matplotlibcpp;
 
 
-#define FlatMap true
+#define FlatMap false
 #define PlotMotors true
 #define RSStep 0.001
-#define UseLander false
+#define UseLander true
 #define tuning false
 #define delay false
 
@@ -468,8 +468,8 @@ int main(int argc, char *argv[])
 	double motorTorqueCapDelta = motorTorqueCap * 0.005 * RSStep/1000;
 	double maxWheelTorqueDelta = maxMotorTorque * reduction / gearboxEff;
 
-	cout << motorKt <<endl;
-	cout<<min(maxGearboxTorque, maxWheelTorque)<<endl;
+	// cout << motorKt <<endl;
+	// cout<<min(maxGearboxTorque, maxWheelTorque)<<endl;
 
 	// Control Parameters
 	bool active = false;
@@ -477,16 +477,13 @@ int main(int argc, char *argv[])
 	double wheelVel[6];
 	double wheelAcc[6];
 	double controlForce[6];
-	double Kp = 10.0;
-	double Kd = 0.00;
-	double Ki = 0.00;
-	double Tp;
-	double Td;
+	double Kp;
+	double Kd;
 	double differentialTorque;
 	double smoothedVelA[6];
 	double smoothedVelB[6];
-	double alpha = 0.1;
-	double beta = 0.1;
+	double alpha;
+	double beta;
 
 	double A = 5;
 	double w = 2*M_PI /     2 ;
@@ -522,6 +519,8 @@ int main(int argc, char *argv[])
 	vector<vector<double>> wheelAngularVelocitySmoothedB(6, vector<double>(dur / RSStep));
 	vector<vector<double>> wheelAngularAccelerationActual(6, vector<double>(dur / RSStep));
 	vector<vector<double>> wheelAngularAccelerationDesired(6, vector<double>(dur / RSStep));
+	vector<vector<double>> wheelAngularPositionActual(6, vector<double>(dur / RSStep));
+	vector<vector<double>> wheelAngularPositionDesired(6, vector<double>(dur / RSStep));
 	vector<vector<double>> wheelTorqueActual(6, vector<double>(dur / RSStep));
 	vector<vector<double>> wheelTorqueDesired(6, vector<double>(dur / RSStep));
 	// vector<vector<double>> wheel(6, vector<double>(dur / RSStep));
@@ -570,38 +569,29 @@ int main(int argc, char *argv[])
 			}
 			else
 			{
-			// 	wheelVel[1] = -A*w*cos(w*time/1000)* (time > 3000);
-			// 	wheelVel[2] = -A*w*cos(w*time/1000) * (time > 3000);
-			// 	wheelVel[4] = A*w*cos(w*time/1000) * (time > 3000);
-			// 	wheelVel[5] = A*w*cos(w*time/1000) * (time > 3000);
+				wheelPos[1] = -(A*cos(w*(time-3000)/1000)-A) * (time > 3000);
+				wheelPos[2] = -(A*cos(w*(time-3000)/1000)-A) * (time > 3000);
+				wheelPos[4] = (A*cos(w*(time-3000)/1000)-A) * (time > 3000);
+				wheelPos[5] = (A*cos(w*(time-3000)/1000)-A) * (time > 3000);
 
-			// 	wheelPos[1] = -A*sin(w*time/1000)* (time > 3000);
-			// 	wheelPos[2] = -A*sin(w*time/1000) * (time > 3000);
-			// 	wheelPos[4] = A*sin(w*time/1000) * (time > 3000);
-			// 	wheelPos[5] = A*sin(w*time/1000) * (time > 3000);
+				wheelVel[1] = -A*w*(-sin(w*(time-3000)/1000)) * (time > 3000);
+				wheelVel[2] = -A*w*(-sin(w*(time-3000)/1000)) * (time > 3000);
+				wheelVel[4] = A*w*(-sin(w*(time-3000)/1000)) * (time > 3000);
+				wheelVel[5] = A*w*(-sin(w*(time-3000)/1000)) * (time > 3000);
 
-			// 	wheelAcc[1] = -A*w*w*-sin(w*time/1000)* (time > 3000);
-			// 	wheelAcc[2] = -A*w*w*-sin(w*time/1000) * (time > 3000);
-			// 	wheelAcc[4] = A*w*w*-sin(w*time/1000) * (time > 3000);
-			// 	wheelAcc[5] = A*w*w*-sin(w*time/1000) * (time > 3000);
+				wheelAcc[1] = -A*w*w*-cos(w*(time-3000)/1000) * (time > 3000);
+				wheelAcc[2] = -A*w*w*-cos(w*(time-3000)/1000) * (time > 3000);
+				wheelAcc[4] = A*w*w*-cos(w*(time-3000)/1000) * (time > 3000);
+				wheelAcc[5] = A*w*w*-cos(w*(time-3000)/1000) * (time > 3000);
 
-				int T1 = 4500;
-				int T2 = 7000;
+				// int T1 = 4500;
+				// int T2 = 7000;
 
-				wheelVel[1] = -(4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
-				wheelVel[2] = -(4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
-				wheelVel[4] = (4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
-				wheelVel[5] = (4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
+				// wheelVel[1] = -(4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
+				// wheelVel[2] = -(4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
+				// wheelVel[4] = (4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
+				// wheelVel[5] = (4 * (time >= 1000 && time < T1) - 4 * (time >= T1 && time < T2));
 
-				// wheelPos[1] = -A*sin(w*time/1000)* (time > 3000);
-				// wheelPos[2] = -A*sin(w*time/1000) * (time > 3000);
-				// wheelPos[4] = A*sin(w*time/1000) * (time > 3000);
-				// wheelPos[5] = A*sin(w*time/1000) * (time > 3000);
-
-				// wheelAcc[1] = -A*w*w*-sin(w*time/1000)* (time > 3000);
-				// wheelAcc[2] = -A*w*w*-sin(w*time/1000) * (time > 3000);
-				// wheelAcc[4] = A*w*w*-sin(w*time/1000) * (time > 3000);
-				// wheelAcc[5] = A*w*w*-sin(w*time/1000) * (time > 3000);
 			}
 		}
 		else
@@ -627,29 +617,20 @@ int main(int argc, char *argv[])
 			alpha = 0.03;		
 			// beta = 0.1;
 
+			// Get Values from robot
 			double q = gc[7+wheel];
-			// double qRef = gc[7+wheel] + RSStep * wheelVel[wheel];
-
 			double qd = gv[6+wheel];
-			// double qdRef = wheelVel[wheel];
-
 			double qdd = ga[6+wheel];
-			// double qddRef = 0;
 
-			// double qddMotor = qddRef + Kd*(qdRef - qd) + Kp*(qRef-q);
-
-			// if (smoothedVelA[wheel] == nan) {
-			// 	smoothedVelA[wheel] = 0;
-			// }
-
+			// Proportional alpha value
 			double ratio = pow(Utils::constrain(abs(1*(qd + 0.00001)/(wheelVel[wheel] + 0.00001))+0.008, 0, 1), 1.05);
-
 			ratio*=alpha;
 
-			cout << qd << ", ";
-			cout <<wheelVel[wheel]<< ", ";
-			cout <<ratio<<endl;
+			// cout << qd << ", ";
+			// cout <<wheelVel[wheel]<< ", ";
+			// cout <<ratio<<endl;
 
+			// Check return to 0
 			if (abs(wheelVel[wheel]) > 0.01) {
 				smoothedVelA[wheel] = ratio * wheelVel[wheel] + (1.0 - ratio) * smoothedVelA[wheel];
 			} else {
@@ -658,10 +639,14 @@ int main(int argc, char *argv[])
 			
 			// smoothedVelB[wheel] = beta * wheelVel[wheel] + (1.0 - beta) * smoothedVelA[wheel];
 
-
+			// Set Reference values
 			double qdRef = smoothedVelA[wheel];
 			double qRef = q + qdRef * RSStep;
 			double qddRef = (qdRef - qd) / RSStep;
+
+			// double qdRef = wheelVel[wheel];
+			// double qRef = wheelPos[wheel];
+			// double qddRef = wheelAcc[wheel];
 
 			double qddMotor = qddRef + Kd*(qdRef - qd) + Kp*(qRef-q);
 
@@ -681,7 +666,7 @@ int main(int argc, char *argv[])
 		
 		
 
-		if (PlotMotors && (time < dur * 1000))
+		if (PlotMotors && (time < dur * 1000 && time > 2000))
 		{
 			for (size_t wheel = 0; wheel < 6; wheel++)
 			{
@@ -690,8 +675,10 @@ int main(int argc, char *argv[])
 				wheelAngularVelocitySmoothedA[wheel][time / (RSStep * 1000)] = smoothedVelA[wheel];
 				wheelAngularVelocitySmoothedB[wheel][time / (RSStep * 1000)] = smoothedVelB[wheel];
 				wheelAngularVelocityActual[wheel][time / (RSStep * 1000)] = gv[6 + wheel];
-				// wheelAngularAccelerationDesired[wheel][time / (RSStep * 1000)] = wheelAcc[wheel];
-				// wheelAngularAccelerationActual[wheel][time / (RSStep * 1000)] = ga[6 + wheel];
+				wheelAngularAccelerationDesired[wheel][time / (RSStep * 1000)] = wheelAcc[wheel];
+				wheelAngularAccelerationActual[wheel][time / (RSStep * 1000)] = ga[6 + wheel];
+				wheelAngularPositionDesired[wheel][time / (RSStep * 1000)] = wheelPos[wheel];
+				wheelAngularPositionActual[wheel][time / (RSStep * 1000)] = gc[7 + wheel];
 				wheelTorqueDesired[wheel][time / (RSStep * 1000)] = controlForce[wheel];
 				wheelTorqueActual[wheel][time / (RSStep * 1000)] = gf[6 + wheel];
 			}
@@ -837,17 +824,31 @@ int main(int argc, char *argv[])
 		plt::xlabel("Time (ms)");
 
 		plt::figure_size(1366, 768);
-		plt::plot(t, wheelAngularVelocityActual[1], "r-");
-		plt::plot(t, wheelAngularVelocitySmoothedA[1], "g-");
-		plt::plot(t, wheelAngularVelocitySmoothedB[1], "k-");
+		// plt::plot(t, wheelAngularVelocitySmoothedA[1], "g-");
+		// plt::plot(t, wheelAngularVelocitySmoothedB[1], "k-");
 		plt::plot(t, wheelAngularVelocityDesired[1], "b-");
+		plt::plot(t, wheelAngularVelocityActual[1], "r-");
 		plt::title("Back Left Wheel Angular Velocity");
 		plt::ylabel("Angular Velocity (rad/s)");
 		plt::xlabel("Time (ms)");
 
 		plt::figure_size(1366, 768);
-		plt::plot(t, wheelTorqueDesired[1], "r-");
-		plt::plot(t, wheelTorqueActual[1], "b-");
+		plt::plot(t, wheelAngularPositionDesired[1], "b-");
+		plt::plot(t, wheelAngularPositionActual[1], "r-");
+		plt::title("Back Left Wheel Position");
+		plt::ylabel("Position (rad)");
+		plt::xlabel("Time (ms)");
+
+		plt::figure_size(1366, 768);
+		plt::plot(t, wheelAngularAccelerationDesired[1], "b-");
+		plt::plot(t, wheelAngularAccelerationActual[1], "r-");
+		plt::title("Back Left Wheel Acceleration");
+		plt::ylabel("Acceleration (rad/s/s)");
+		plt::xlabel("Time (ms)");
+
+		plt::figure_size(1366, 768);
+		plt::plot(t, wheelTorqueDesired[1], "b-");
+		plt::plot(t, wheelTorqueActual[1], "r-");
 		plt::title("Back Left Wheel Torque");
 		plt::ylabel("Torque (Nm)");
 		plt::xlabel("Time (ms)");
@@ -881,20 +882,20 @@ int main(int argc, char *argv[])
 		// plt::ylabel("Torque (Nm)");
 		// plt::xlabel("Time (ms)");
 
-		plt::figure_size(1366, 768);
-		plt::plot(t, wheelAngularVelocityActual[5], "r-");
-		plt::plot(t, wheelAngularVelocitySmoothedA[5], "g-");
-		plt::plot(t, wheelAngularVelocityDesired[5], "b-");
-		plt::title("Back Right Wheel Angular Velocity");
-		plt::ylabel("Angular Velocity (rad/s)");
-		plt::xlabel("Time (ms)");
+		// plt::figure_size(1366, 768);
+		// plt::plot(t, wheelAngularVelocityActual[5], "r-");
+		// plt::plot(t, wheelAngularVelocitySmoothedA[5], "g-");
+		// plt::plot(t, wheelAngularVelocityDesired[5], "b-");
+		// plt::title("Back Right Wheel Angular Velocity");
+		// plt::ylabel("Angular Velocity (rad/s)");
+		// plt::xlabel("Time (ms)");
 
-		plt::figure_size(1366, 768);
-		plt::plot(t, wheelTorqueDesired[5], "r-");
-		plt::plot(t, wheelTorqueActual[5], "b-");
-		plt::title("Back Right Wheel Torque");
-		plt::ylabel("Torque (Nm)");
-		plt::xlabel("Time (ms)");
+		// plt::figure_size(1366, 768);
+		// plt::plot(t, wheelTorqueDesired[5], "r-");	
+		// plt::plot(t, wheelTorqueActual[5], "b-");
+		// plt::title("Back Right Wheel Torque");
+		// plt::ylabel("Torque (Nm)");
+		// plt::xlabel("Time (ms)");
 
 		plt::show();
 	}

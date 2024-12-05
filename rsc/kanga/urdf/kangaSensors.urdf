@@ -119,9 +119,9 @@
 
     <link name="fullwheelcw">
         <contact>
-            <lateral_friction value="1.0"/>
-            <rolling_friction value="0.0"/>
-            <stiffness value="30000"/>
+            <lateral_friction value="0.55"/>
+            <rolling_friction value="0.15"/>
+            <stiffness value="5000"/>
             <damping value="1000"/>
         </contact>
         <visual>
@@ -206,9 +206,9 @@
 
     <link name="fullwheelccw">
         <contact>
-            <lateral_friction value="1.0"/>
-            <rolling_friction value="0.0"/>
-            <stiffness value="30000"/>
+            <lateral_friction value="0.55"/>
+            <rolling_friction value="0.15"/>
+            <stiffness value="5000"/>
             <damping value="1000"/>
         </contact>
         <visual>
@@ -257,9 +257,9 @@
 
     <link name="fullwheelccw_2">
         <contact>
-            <lateral_friction value="1.0"/>
-            <rolling_friction value="0.0"/>
-            <stiffness value="30000"/>
+            <lateral_friction value="0.55"/>
+            <rolling_friction value="0.15"/>
+            <stiffness value="5000"/>
             <damping value="1000"/>
         </contact>
         <visual>
@@ -308,9 +308,9 @@
 
     <link name="fullwheelcw_2">
         <contact>
-            <lateral_friction value="1.0"/>
-            <rolling_friction value="0.0"/>
-            <stiffness value="30000"/>
+            <lateral_friction value="0.55"/>
+            <rolling_friction value="0.15"/>
+            <stiffness value="5000"/>
             <damping value="1000"/>
         </contact>
         <visual>
